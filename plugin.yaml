@@ -5,6 +5,7 @@ version: 0.2.0
 description: Pull a site's database and uploaded files from its servers over SSH, or push them back, with an environment per server
 docs: DOCS.md
 icon: icon.svg
+screenshots: [docs/tab.png]
 
 # lerd remote-pull:setup | pull | push
 commands:
@@ -41,3 +42,36 @@ mcp:
       timeout: 10m
 
 requires: [ssh, rsync]
+
+api:
+  - path: state
+    methods: [GET]
+    run: bin/api
+  - path: ls
+    methods: [GET]
+    run: bin/api
+    loopback_only: true
+  - path: count
+    methods: [GET]
+    run: bin/api
+    loopback_only: true
+  - path: file
+    methods: [GET]
+    run: bin/api
+    loopback_only: true
+  - path: backups
+    methods: [GET]
+    run: bin/api
+    loopback_only: true
+  - path: env
+    methods: [POST]
+    run: bin/api
+    loopback_only: true
+  - path: run
+    methods: [POST]
+    run: bin/api
+    loopback_only: true
+    timeout: 10m
+
+ui:
+  site_tab: {title: Remote, entry: ui/site.html}

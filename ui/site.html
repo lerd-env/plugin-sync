@@ -1,0 +1,257 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Remote</title>
+  <style>
+    /* lerd draws buttons, cards, inputs and pills; this is layout, using lerd's own tokens. */
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    .tile { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; background: var(--lerd-surface-hover); color: var(--lerd-text-strong); flex: none; }
+    .tile svg.i { width: 18px; height: 18px; }
+
+    .envs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .env { display: flex; align-items: center; gap: 12px; padding: 12px; cursor: pointer; text-align: left; min-width: 0; }
+    .env[aria-current="true"] { border-color: var(--lerd-accent); box-shadow: 0 0 0 1px var(--lerd-accent); }
+    .env .meta { flex: 1; min-width: 0; display: grid; gap: 2px; }
+    .env .name { font-weight: 600; color: var(--lerd-text); }
+    .env .host { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .env .gear { padding: 4px; height: auto; border: 0; background: none; }
+    .env.add { height: auto; gap: 8px; justify-content: center; border-style: dashed; color: var(--lerd-text-muted); font-weight: 500; }
+    .dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lerd-text-muted); }
+    .dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lerd-line); }
+    .dot.ok::before { background: var(--lerd-ok); }
+    .dot.bad::before { background: var(--lerd-bad); }
+    .dot.busy::before { background: var(--lerd-warn); }
+
+    .files-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+    .files-head .lerd-label { margin: 0; }
+    .crumbs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow: hidden; font-size: 13px; }
+    .crumbs button { border: 0; background: none; padding: 2px 4px; height: auto; color: var(--lerd-text-strong); }
+    .crumbs button:last-child { color: var(--lerd-text); font-weight: 600; }
+    .crumbs .sep { color: var(--lerd-text-muted); }
+    .icon-btn { padding: 0 8px; }
+    .sync { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; margin-right: 4px; }
+
+    .panes { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: stretch; }
+    .mid { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+    .mid button { justify-content: center; gap: 6px; min-width: 120px; }
+    @media (max-width: 900px) {
+      .panes { grid-template-columns: 1fr; }
+      .mid { flex-direction: row; }
+      .mid button { flex: 1; }
+    }
+    .pane { display: flex; flex-direction: column; min-height: 320px; }
+    .pane-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--lerd-line); min-width: 0; }
+    .pane-head .meta { flex: 1; min-width: 0; display: grid; gap: 1px; }
+    .pane-head .title { font-weight: 600; }
+    .pane-head .where { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rows { overflow: auto; max-height: 460px; flex: 1; }
+    .f { display: grid; grid-template-columns: 14px 18px 16px minmax(0, 1fr) auto 64px 84px; align-items: center; gap: 8px; box-sizing: border-box; height: 33px; padding: 0 12px 0 calc(12px + var(--depth, 0) * 18px); border-top: 1px solid var(--lerd-line); font-size: 13px; }
+    .f:first-child { border-top: 0; }
+    .f:hover { background: var(--lerd-surface-hover); }
+    .f .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .f.dir { cursor: pointer; user-select: none; }
+    .f .caret { display: grid; place-items: center; color: var(--lerd-text-muted); }
+    .f .caret svg.i { width: 14px; height: 14px; transition: transform 0.12s; }
+    .f .caret.open svg.i { transform: rotate(90deg); }
+    .f.note { grid-template-columns: 14px 1fr; font-size: 12px; }
+    /* Holds the place of a name the other side has, at a real row's height. */
+    .f.ghost { padding-top: 0; padding-bottom: 0; }
+    .f.ghost:hover { background: none; }
+    .f .focus { height: auto; padding: 2px 4px; border: 0; background: none; color: var(--lerd-text-muted); opacity: 0; }
+    .f:hover .focus, .f .focus:focus-visible { opacity: 1; }
+    .f.dir .n { font-weight: 500; }
+    .f .num svg.i { width: 14px; height: 14px; vertical-align: middle; }
+    .picked { font-size: 12px; text-align: center; }
+    button.pill-btn { height: auto; min-width: 0; border: 0; cursor: pointer; text-decoration: underline dotted; }
+    /* "same" stays out of the way until pointed at, then reads as a normal badge. */
+    button.pill-btn.faint { opacity: 0.3; text-decoration: none; transition: opacity 0.12s; }
+    button.pill-btn.faint:hover, button.pill-btn.faint:focus-visible { opacity: 1; }
+    .picked .link { border: 0; background: none; padding: 0; height: auto; min-width: 0; font-size: 12px; text-decoration: underline; }
+    .f .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--lerd-text-muted); font-size: 12px; }
+    .f.locked { opacity: 0.55; }
+    .pane .lerd-empty { margin: auto; padding: 24px; text-align: center; }
+
+    .files-head .spacer { flex: 1; }
+    .files-head .lerd-tabs { margin: 0 0 0 8px; }
+    .bk { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--lerd-line); flex-wrap: wrap; }
+    .bk:first-child { border-top: 0; }
+    .bk .meta { flex: 1; min-width: 220px; display: grid; gap: 2px; }
+    .bk .title { font-weight: 500; }
+    .bk .tile { width: 30px; height: 30px; }
+    .bk-files { border-top: 1px solid var(--lerd-line); background: var(--lerd-surface-hover); max-height: 260px; overflow: auto; }
+    .bk-file { display: grid; grid-template-columns: minmax(0, 1fr) 64px auto; gap: 10px; align-items: center; padding: 4px 12px 4px 54px; font-size: 12px; }
+    .bk-file .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bk-file .num { text-align: right; color: var(--lerd-text-muted); }
+    .db { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .db .meta { flex: 1; min-width: 220px; display: grid; gap: 2px; }
+    .db .title { font-weight: 600; }
+
+    .out-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--lerd-line); }
+    .out-head .spacer { flex: 1; }
+    pre.log { margin: 0; padding: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; font-size: 12px; }
+
+    dialog { width: min(560px, calc(100vw - 32px)); box-sizing: border-box; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+    .grid2 .wide { grid-column: 1 / -1; }
+    @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+    .grid2 label { display: grid; gap: 4px; font-size: 12px; color: var(--lerd-text-muted); }
+    .grid2 input:not([type=checkbox]) { width: 100%; box-sizing: border-box; }
+    .grid2 label.check { display: flex; align-items: center; gap: 8px; color: var(--lerd-text); font-size: 13px; }
+    fieldset { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+    legend { padding: 0; margin-bottom: 8px; }
+    #confirm-list { margin: 0 0 12px; padding-left: 18px; font-size: 12px; max-height: 160px; overflow: auto; }
+    #confirm-type { width: 100%; box-sizing: border-box; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-enter" viewBox="0 0 24 24"><path d="M9 10l-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  </svg>
+
+  <section class="lerd-section">
+    <span class="lerd-label">Environments</span>
+    <div class="envs" id="envs"></div>
+  </section>
+
+  <div id="main" hidden>
+    <section class="lerd-section">
+      <div class="files-head">
+        <span class="lerd-label">Files</span>
+        <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
+        <label class="sync" title="Scroll both sides together"><input type="checkbox" id="sync-scroll"> Sync scroll</label>
+        <button class="icon-btn" id="expand-all" title="Expand every folder under the top one">Expand all</button>
+        <button class="icon-btn" id="collapse-all" title="Collapse every folder">Collapse all</button>
+        <button class="icon-btn" id="refresh" title="Reload both sides" aria-label="Reload"><svg class="i"><use href="#i-refresh"/></svg></button>
+        <span id="status" class="lerd-muted"></span>
+      </div>
+      <div class="panes">
+        <div class="lerd-card flush pane" id="pane-local"></div>
+        <div class="mid">
+          <button id="push-sel" class="primary" disabled><span id="push-label">Push</span><svg class="i"><use href="#i-right"/></svg></button>
+          <button id="pull-sel" disabled><svg class="i"><use href="#i-left"/></svg><span id="pull-label">Pull</span></button>
+          <span id="picked" class="lerd-muted picked" hidden><span id="picked-n"></span> · <button id="picked-clear" class="link">Clear</button></span>
+        </div>
+        <div class="lerd-card flush pane" id="pane-remote"></div>
+      </div>
+      <p class="lerd-muted">Open folders and tick files or whole folders on either side, across as many folders as you like, then send them across. Nothing is ever deleted, and .env or wp-config.php stays on its own side.</p>
+    </section>
+
+    <section class="lerd-section">
+      <span class="lerd-label">Database</span>
+      <div class="lerd-card db">
+        <span class="tile"><svg class="i"><use href="#i-db"/></svg></span>
+        <div class="meta">
+          <span class="title" id="db-title">Database</span>
+          <span class="lerd-muted" id="db-sub"></span>
+        </div>
+        <button id="db-pull"><svg class="i"><use href="#i-down"/></svg> Pull database</button>
+        <button id="db-push" class="danger"><svg class="i"><use href="#i-up"/></svg> Push database</button>
+      </div>
+    </section>
+
+    <section class="lerd-section">
+      <div class="files-head">
+        <span class="lerd-label">Backups</span>
+        <div class="lerd-tabs" role="tablist" id="backup-tabs">
+          <button role="tab" data-tab="files" aria-selected="true">Files</button>
+          <button role="tab" data-tab="db" aria-selected="false">Databases</button>
+        </div>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="backups-refresh" title="Reload backups" aria-label="Reload backups"><svg class="i"><use href="#i-refresh"/></svg></button>
+      </div>
+      <div class="lerd-card flush" id="backups"></div>
+      <p class="lerd-muted" id="backups-hint"></p>
+    </section>
+  </div>
+
+  <div class="lerd-card lerd-empty" id="no-env" hidden>
+    <strong>No server yet</strong>
+    <span>Add the site's production or staging server to browse its files and move data both ways.</span>
+  </div>
+
+  <section class="lerd-section" id="out" hidden>
+    <div class="lerd-card flush">
+      <div class="out-head">
+        <span class="lerd-label" style="margin:0">Output</span>
+        <span id="out-pill" class="lerd-pill"></span>
+        <span class="lerd-muted" id="out-what"></span>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="out-close" aria-label="Close output"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <pre class="log lerd-mono" id="log"></pre>
+    </div>
+  </section>
+
+  <dialog id="settings">
+    <h3 id="settings-title">Server</h3>
+    <form id="form" autocomplete="off">
+      <fieldset>
+        <legend class="lerd-label">Connection</legend>
+        <div class="grid2">
+          <label id="name-row" class="wide">Environment name <input name="env" placeholder="production" pattern="[a-z0-9][a-z0-9\-]*"></label>
+          <label>SSH <input name="ssh" placeholder="forge@203.0.113.10" required></label>
+          <label>SSH port <input name="ssh_port" placeholder="22" inputmode="numeric"></label>
+          <label class="wide">Project folder on the server <input name="path" placeholder="/home/forge/shop.com" required></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend class="lerd-label">Sync</legend>
+        <div class="grid2">
+          <label class="wide" id="url-row">Site address on this server, rewritten both ways in the database <input name="url" placeholder="https://shop.com"></label>
+          <label>Folders for pull and push from the terminal <input name="files"></label>
+          <label>Sanitize SQL after a pull <input name="sanitize" placeholder=".lerd/sanitize.sql"></label>
+          <label class="wide check"><input type="checkbox" name="backup"> Back up files before replacing them: on the server for a push, in lerd's data folder for a pull</label>
+          <label>Backups to keep, oldest deleted first <input name="keep" type="number" min="1" max="9999" placeholder="10"></label>
+        </div>
+      </fieldset>
+      <details>
+        <summary class="lerd-muted">Database, when the server's .env or wp-config.php does not say</summary>
+        <div class="grid2" style="margin-top:8px">
+          <label>Name <input name="database"></label>
+          <label>User <input name="db_user"></label>
+          <label>Password <input name="db_password" type="password" autocomplete="new-password"></label>
+          <label>Host <input name="db_host" placeholder="127.0.0.1"></label>
+          <label>Port <input name="db_port" inputmode="numeric"></label>
+        </div>
+      </details>
+      <p class="lerd-muted" id="form-error" hidden></p>
+      <div class="lerd-toolbar">
+        <button type="button" id="remove" class="danger">Remove</button>
+        <span class="spacer"></span>
+        <button type="button" id="settings-cancel">Cancel</button>
+        <button class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-body"></p>
+    <ul id="confirm-list" class="lerd-mono" hidden></ul>
+    <input id="confirm-type" autocomplete="off" hidden>
+    <div class="lerd-toolbar">
+      <span class="spacer"></span>
+      <button id="confirm-no" type="button">Cancel</button>
+      <button id="confirm-yes" type="button" class="primary"></button>
+    </div>
+  </dialog>
+  <script src="lerd.js"></script>
+  <script src="site.js"></script>
+</body>
+</html>

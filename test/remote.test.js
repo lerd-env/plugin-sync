@@ -122,3 +122,50 @@ test('pushScript refuses an upload that arrived short, before touching the datab
   assert.equal(r.fed, '');
   assert.equal(r.backup, '');
 });
+
+const { applyEnv, publicConfig } = require('../lib/remote');
+
+test('applyEnv merges fields into one environment and checks them', () => {
+  const config = { environments: { production: { ssh: 'p@h', path: '/p', db_password: 'old' } } };
+  applyEnv(config, 'production', { url: 'https://shop.com/', files: 'wp-content/uploads, public/media', db_password: '' });
+  assert.deepEqual(config.environments.production, { ssh: 'p@h', path: '/p', db_password: 'old', url: 'https://shop.com', files: ['wp-content/uploads', 'public/media'] });
+  applyEnv(config, 'staging', { ssh: 's@h', path: '/s', ssh_port: '2222' });
+  assert.deepEqual(Object.keys(config.environments), ['production', 'staging']);
+  applyEnv(config, 'staging', { ssh_port: '' });
+  assert.equal(config.environments.staging.ssh_port, undefined, 'an emptied field is dropped');
+});
+
+test('applyEnv refuses what would point outside the project or nowhere', () => {
+  const fresh = () => ({ environments: {} });
+  assert.throws(() => applyEnv(fresh(), 'Prod', { ssh: 'a@b', path: '/p' }), /not a valid environment name/);
+  assert.throws(() => applyEnv(fresh(), 'prod', { ssh: 'a@b' }), /--ssh user@host and --path/);
+  assert.throws(() => applyEnv(fresh(), 'prod', { ssh: 'a@b', path: '/p', files: '../etc' }), /inside the project/);
+  assert.throws(() => applyEnv(fresh(), 'prod', { ssh: 'a@b', path: '/p', url: 'shop.com' }), /site's address/);
+  assert.throws(() => applyEnv(fresh(), 'prod', { ssh: '-oProxyCommand=x', path: '/p' }), /user@host/);
+  assert.throws(() => applyEnv(fresh(), 'prod', { ssh: 'a@b', path: '/p', bogus: 1 }), /unknown setting bogus/);
+});
+
+test('publicConfig never hands the database password to the page', () => {
+  const out = publicConfig({ environments: { production: { ssh: 'p@h', db_password: 'secret' }, staging: { ssh: 's@h' } } });
+  assert.deepEqual(out, { environments: { production: { ssh: 'p@h', db_password_set: true }, staging: { ssh: 's@h', db_password_set: false } } });
+});
+
+test('applyEnv keeps backups on unless the user turns them off', () => {
+  const config = { environments: {} };
+  applyEnv(config, 'prod', { ssh: 'a@b', path: '/p' });
+  assert.equal(config.environments.prod.backup, undefined, 'on by default, so nothing is stored');
+  applyEnv(config, 'prod', { backup: 'off' });
+  assert.equal(config.environments.prod.backup, false);
+  applyEnv(config, 'prod', { backup: true });
+  assert.equal(config.environments.prod.backup, undefined);
+  assert.throws(() => applyEnv(config, 'prod', { backup: 'maybe' }), /on or off/);
+});
+
+test('applyEnv takes how many backups to keep, 10 when unset', () => {
+  const config = { environments: {} };
+  applyEnv(config, 'prod', { ssh: 'a@b', path: '/p', keep: '25' });
+  assert.equal(config.environments.prod.keep, 25);
+  applyEnv(config, 'prod', { keep: '' });
+  assert.equal(config.environments.prod.keep, undefined);
+  for (const bad of ['0', '-3', 'many', '1.5']) assert.throws(() => applyEnv(config, 'prod', { keep: bad }), /whole number/);
+});

@@ -8,11 +8,10 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { spawnSync } = require('node:child_process');
 const { parseArgs } = require('../lib/args');
-const { site: findSite, lerd, siteDatabase, siteUrl } = require('../lib/lerd');
+const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
 
-// Server-side settings a local copy would break, never sent from a pushed folder.
-const NEVER_PUSH = ['.env', 'wp-config.php'];
+const { NEVER_PUSH, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
@@ -40,7 +39,7 @@ async function pushDatabase(site, env) {
   fs.mkdirSync(tmp, { recursive: true });
   const file = path.join(tmp, `${site.name}-push.sql`);
   try {
-    if (env.url) {
+    if (env.url && isWordPress(site)) {
       // wp-cli writes the rewritten dump without touching the local database.
       console.log(`exporting ${database}, replacing ${siteUrl(site)} with ${env.url}`);
       const fd = fs.openSync(file, 'w', 0o600);
@@ -69,6 +68,7 @@ async function pushDatabase(site, env) {
     console.log(`backing up and importing into ${db.database}`);
     const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, backup, fs.statSync(file).size)], { stdio: ['ignore', 'inherit', 'inherit'] });
     if (r.status !== 0) throw new Error(`pushing the database to ${env.name} failed`);
+    ssh(env, pruneCommand(dir, `backup-${db.database}-`, env.keep || KEEP_DEFAULT));
   } finally {
     fs.rmSync(file, { force: true });
   }
@@ -76,6 +76,7 @@ async function pushDatabase(site, env) {
 
 function pushFiles(site, env, dryRun) {
   if (!(env.files || []).length) return console.log(`no folders listed for ${env.name}; add them with lerd remote-pull:setup --env ${env.name} --files a,b`);
+  const keep = dryRun ? null : backupDir('push', env, site.name);
   for (const dir of env.files) {
     if (!fs.existsSync(path.join(site.path, dir))) {
       console.log(`skipping ${dir}/, which this site does not have`);
@@ -83,11 +84,15 @@ function pushFiles(site, env, dryRun) {
     }
     console.log(`${dryRun ? 'would send' : 'sending'} ${dir}/`);
     // No --delete: a file only the server has, such as a fresh upload, is left alone.
-    const args = ['-az', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
+    const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
+    const args = ['-az', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
     const r = spawnSync('rsync', args, { stdio: ['ignore', 'inherit', 'inherit'] });
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(`rsync of ${dir} failed`);
   }
+  const note = backupNote('push', env, keep);
+  if (note) console.log(note);
+  pruneBackups('push', env, keep);
 }
 
 (async () => {

@@ -7,16 +7,17 @@
 // database settings are only needed when the server's .env or wp-config.php
 // does not carry them.
 const { parseArgs } = require('../lib/args');
-const { loadConfig, saveConfig, checkRelative } = require('../lib/remote');
+const { loadConfig, saveConfig, applyEnv } = require('../lib/remote');
+const { site: findSite, isWordPress } = require('../lib/lerd');
 
-const FLAGS = { ssh: 'ssh', path: 'path', 'ssh-port': 'ssh_port', url: 'url', sanitize: 'sanitize', database: 'database', 'db-user': 'db_user', 'db-password': 'db_password', 'db-host': 'db_host', 'db-port': 'db_port' };
+const FLAGS = { keep: 'keep', backup: 'backup', files: 'files', ssh: 'ssh', path: 'path', 'ssh-port': 'ssh_port', url: 'url', sanitize: 'sanitize', database: 'database', 'db-user': 'db_user', 'db-password': 'db_password', 'db-host': 'db_host', 'db-port': 'db_port' };
 
 function show(name, env) {
   console.log(`[${name}]`);
   for (const [k, v] of Object.entries(env)) console.log(`  ${k.padEnd(12)} ${k === 'db_password' ? '(saved)' : Array.isArray(v) ? v.join(', ') : v}`);
 }
 
-try {
+(async () => {
   const opts = parseArgs(process.argv.slice(2), ['remove']);
   const site = opts._[0] || process.env.LERD_SITE;
   if (!site) throw new Error('run it inside a linked project, or name the site: lerd remote-pull:setup <site> --ssh user@host --path /remote/project');
@@ -29,7 +30,6 @@ try {
     return;
   }
   const name = opts.env || 'production';
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`${name} is not a valid environment name: lowercase letters, digits and dashes`);
   if (opts.remove) {
     if (!config.environments[name]) throw new Error(`no ${name} environment to remove`);
     delete config.environments[name];
@@ -37,17 +37,13 @@ try {
     console.log(`removed ${name}`);
     return;
   }
-  const env = config.environments[name] || {};
-  for (const [flag, key] of Object.entries(FLAGS)) if (opts[flag] !== undefined) env[key] = opts[flag];
-  if (opts.files !== undefined) env.files = opts.files.split(',').map((f) => f.trim()).filter(Boolean).map(checkRelative);
-  if (env.sanitize) checkRelative(env.sanitize);
-  if (env.url && !/^https?:\/\/[^/\s]+$/.test(env.url.replace(/\/+$/, ''))) throw new Error(`--url takes the site's address, like https://example.com`);
-  if (env.url) env.url = env.url.replace(/\/+$/, '');
-  if (!env.ssh || !env.path) throw new Error('--ssh user@host and --path /remote/project are both needed');
-  config.environments[name] = env;
+  const fields = {};
+  for (const [flag, key] of Object.entries(FLAGS)) if (opts[flag] !== undefined) fields[key] = opts[flag];
+  if (fields.url && !isWordPress(await findSite(site))) throw new Error('--url rewrites WordPress addresses, and this site is not WordPress');
+  const env = applyEnv(config, name, fields);
   saveConfig(site, config);
   show(name, env);
-} catch (e) {
+})().catch((e) => {
   console.error(e.message);
   process.exit(1);
-}
+});

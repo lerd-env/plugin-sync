@@ -7,7 +7,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
-const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl } = require('../lib/lerd');
+const { NEVER_PUSH, backupDir, backupNote, pruneBackups } = require('../lib/files');
+const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, dumpCommand, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
 async function pullDatabase(site, config) {
@@ -38,7 +39,7 @@ async function pullDatabase(site, config) {
   }
   // A WordPress database names its own address in options and content, so
   // without this the local copy redirects to the server.
-  if (config.url) {
+  if (config.url && isWordPress(site)) {
     console.log(`replacing ${config.url} with ${siteUrl(site)}`);
     lerd(['wp', 'search-replace', config.url, siteUrl(site), '--all-tables', '--skip-columns=guid', '--report-changed-only'], site.path);
   }
@@ -59,16 +60,21 @@ async function pullDatabase(site, config) {
 }
 
 function pullFiles(site, config) {
+  const keep = backupDir('pull', config, site.name);
   for (const dir of config.files || []) {
     console.log(`syncing ${dir}/`);
     fs.mkdirSync(path.join(site.path, dir), { recursive: true });
     // No --delete: a file only the local copy has is left alone.
-    const r = spawnSync('rsync', ['-az', '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
+    const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
+    const r = spawnSync('rsync', ['-az', ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(`rsync of ${dir} failed`);
   }
+  const note = backupNote('pull', config, keep);
+  if (note) console.log(note);
+  pruneBackups('pull', config, keep);
 }
 
 (async () => {
