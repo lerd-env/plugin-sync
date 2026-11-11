@@ -21,7 +21,7 @@ function show(name, env) {
   const opts = parseArgs(process.argv.slice(2), ['remove']);
   const site = opts._[0] || process.env.LERD_SITE;
   if (!site) throw new Error('run it inside a linked project, or name the site: lerd sync:setup <site> --ssh user@host --path /remote/project');
-  const config = loadConfig(site);
+  let config = loadConfig(site);
   const changes = Object.keys(opts).filter((k) => k !== '_' && k !== 'env');
   if (!changes.length && !opts.env) {
     const names = Object.keys(config.environments);
@@ -36,6 +36,13 @@ function show(name, env) {
     saveConfig(site, config);
     console.log(`removed ${name}`);
     return;
+  }
+  if (opts.scrub !== undefined) {
+    if (!['on', 'off'].includes(opts.scrub)) throw new Error(`--scrub is on or off, not ${opts.scrub}`);
+    const info = await require('../lib/ops').scrub(site, { env: name, action: `scrub-${opts.scrub}` });
+    console.log(info.enabled ? `scrubbing after a pull from ${name}, with ${info.path}; edit it to fit your tables` : `no scrub after a pull from ${name}; ${info.path} is kept`);
+    if (Object.keys(opts).filter((k) => !['_', 'env', 'scrub'].includes(k)).length === 0) return;
+    config = loadConfig(site); // scrub saved its change; build on it
   }
   const fields = {};
   for (const [flag, key] of Object.entries(FLAGS)) if (opts[flag] !== undefined) fields[key] = opts[flag];

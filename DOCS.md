@@ -85,13 +85,10 @@ A server database restore asks for the environment's name typed back, or takes `
 
 The diff and the file viewer the badges open need lerd 1.39 or newer. On an older lerd the badges are plain labels and everything else works.
 
-## Sanitize
+## Scrubbing personal data
 
-A sanitize file is plain SQL committed to the project, for example:
+A pull brings the server's real data down, customers included. Turn on **Scrub personal data after a pull** in the Database card, or run `lerd sync:setup --env production --scrub on`, and a SQL file runs on this site's database after every pull from that environment.
 
-```sql
-UPDATE users SET email = CONCAT('user', id, '@example.test'), name = CONCAT('Customer ', id);
-TRUNCATE sessions;
-```
+Turning it on writes a starting point into `.lerd/scrub.sql`: for WordPress and Bedrock it empties emails, names, addresses and phone numbers of users, commenters and WooCommerce orders, using the site's table prefix, and keeps logins and passwords so you can still sign in; for Laravel it renames everyone in `users`, with the rest commented out for you to keep what your app has. **View** shows the SQL, **Edit** opens it in lerd's editor (or a plain text box on an older lerd), and the file is yours to change and commit. Turning scrubbing off keeps the file, and an edited file is never replaced.
 
-It stops at the first failing statement and fails the pull, warning that the data may still be unscrubbed.
+The scrub stops at the first failing statement and fails the pull, warning that the data may still hold personal details. It runs on your machine after the dump arrives, and uploaded files are never scrubbed.

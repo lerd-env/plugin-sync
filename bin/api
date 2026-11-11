@@ -17,6 +17,7 @@ function runCommand(cmd, args) {
 
 async function run(site, body) {
   if (body.action === 'transfer') return ops.transfer(site, body);
+  if (['scrub-on', 'scrub-off', 'scrub-save'].includes(body.action)) return ops.scrub(site, body);
   if (body.action === 'restore') return ops.restore(site, body);
   if (body.action === 'remove-backup') return ops.removeBackup(site, body);
   const env = pickEnv(loadConfig(site), body.env, { required: true });
@@ -44,6 +45,7 @@ async function run(site, body) {
   const opts = { env: q.get('env'), dir: q.get('dir'), all: q.get('all') === '1', side: q.get('side'), file: q.get('file'), backup: q.get('backup'), id: q.get('id'), paths: JSON.parse(q.get('paths') || '[]') };
   if (process.env.LERD_METHOD !== 'POST') {
     if (q.get('backups')) return console.log(JSON.stringify(q.get('id') ? await ops.backupFiles(site, opts) : await ops.backups(site, opts)));
+    if (q.get('scrub')) return console.log(JSON.stringify(await ops.scrub(site, opts)));
     if (q.get('count')) return console.log(JSON.stringify(await ops.count(site, opts)));
     if (q.get('file')) return console.log(JSON.stringify(await ops.fileVersions(site, opts)));
     console.log(JSON.stringify(q.get('dir') !== null ? await ops.listing(site, opts) : { ...publicConfig(loadConfig(site)), local: await ops.localInfo(site) }));

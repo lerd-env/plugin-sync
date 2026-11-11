@@ -17,6 +17,7 @@ lerd sync:setup --ssh forge@203.0.113.10 --path /home/forge/shop.com \
 | `--path` | The project's folder on the server |
 | `--files a,b` | Folders inside the project to copy down, comma separated |
 | `--sanitize file.sql` | SQL in the project to run over the pulled database, such as replacing customers' emails |
+| `--scrub on` | Write a default scrub for the framework into `.lerd/scrub.sql` and run it after every pull |
 | `--database`, `--db-user`, `--db-password`, `--db-host`, `--db-port` | The server's database, when its `.env` does not say it with `DB_DATABASE`, `DB_USERNAME` and friends |
 
 SSH runs with `BatchMode=yes`, so it never waits on a prompt: the key must be loaded in an agent or have no passphrase, and the server must already be in your `known_hosts` (connect once with `ssh` to accept it).

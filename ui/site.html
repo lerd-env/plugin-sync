@@ -69,7 +69,8 @@
     button.pill-btn.faint:hover, button.pill-btn.faint:focus-visible { opacity: 1; }
     .picked .link { border: 0; background: none; padding: 0; height: auto; min-width: 0; font-size: 12px; text-decoration: underline; }
     .f .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--lerd-text-muted); font-size: 12px; }
-    .f.locked { opacity: 0.55; }
+    .f .lock { display: grid; place-items: center; color: var(--lerd-text-muted); cursor: help; }
+    .f .lock svg.i { width: 14px; height: 14px; }
     .pane .lerd-empty { margin: auto; padding: 24px; text-align: center; }
 
     .files-head .spacer { flex: 1; }
@@ -86,6 +87,11 @@
     .db { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .db .meta { flex: 1; min-width: 220px; display: grid; gap: 2px; }
     .db .title { font-weight: 600; }
+    .db .scrub { flex-basis: 100%; display: flex; align-items: center; gap: 10px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--lerd-line); flex-wrap: wrap; }
+    .db .scrub .spacer { flex: 1; }
+    .db label.check { display: flex; align-items: center; gap: 8px; }
+    #editor textarea { width: 100%; box-sizing: border-box; min-height: 320px; font-size: 12px; margin-bottom: 12px; }
+    #editor { width: min(820px, calc(100vw - 32px)); }
 
     .out-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--lerd-line); }
     .out-head .spacer { flex: 1; }
@@ -121,6 +127,7 @@
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
     <symbol id="i-enter" viewBox="0 0 24 24"><path d="M9 10l-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   </svg>
 
@@ -162,6 +169,13 @@
         </div>
         <button id="db-pull"><svg class="i"><use href="#i-down"/></svg> Pull database</button>
         <button id="db-push" class="danger"><svg class="i"><use href="#i-up"/></svg> Push database</button>
+        <div class="scrub">
+          <label class="check"><input type="checkbox" id="scrub-on"> Scrub personal data after a pull</label>
+          <span class="lerd-muted lerd-mono" id="scrub-path"></span>
+          <span class="spacer"></span>
+          <button id="scrub-view" hidden>View</button>
+          <button id="scrub-edit" hidden>Edit</button>
+        </div>
       </div>
     </section>
 
@@ -215,7 +229,6 @@
         <div class="grid2">
           <label class="wide" id="url-row">Site address on this server, rewritten both ways in the database <input name="url" placeholder="https://shop.com"></label>
           <label>Folders for pull and push from the terminal <input name="files"></label>
-          <label title="SQL in the project, run on this site's database after every pull, to replace customers' emails, names and the like. A failing statement fails the pull.">Scrub personal data after a pull (SQL file) <input name="sanitize" placeholder=".lerd/sanitize.sql"></label>
           <label class="wide check"><input type="checkbox" name="backup"> Back up files before replacing them: on the server for a push, in lerd's data folder for a pull</label>
           <label>Backups to keep, oldest deleted first <input name="keep" type="number" min="1" max="9999" placeholder="10"></label>
         </div>
@@ -238,6 +251,16 @@
         <button class="primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="editor">
+    <h3 id="editor-title"></h3>
+    <textarea id="editor-text" class="lerd-mono" spellcheck="false"></textarea>
+    <div class="lerd-toolbar">
+      <span class="spacer"></span>
+      <button id="editor-cancel" type="button">Cancel</button>
+      <button id="editor-save" type="button" class="primary">Save</button>
+    </div>
   </dialog>
 
   <dialog id="confirm">

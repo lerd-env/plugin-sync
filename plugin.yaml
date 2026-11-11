@@ -96,6 +96,10 @@ api:
     methods: [GET]
     run: bin/api
     loopback_only: true
+  - path: scrub
+    methods: [GET]
+    run: bin/api
+    loopback_only: true
   - path: env
     methods: [POST]
     run: bin/api

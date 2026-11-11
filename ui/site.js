@@ -90,7 +90,7 @@ async function select(name) {
   picked.remote.clear();
   renderEnvs();
   renderDb();
-  await Promise.all([load(), check(name), loadBackups()]);
+  await Promise.all([load(), check(name), loadBackups(), loadScrub()]);
 }
 
 async function check(name) {
@@ -251,7 +251,7 @@ function row(side, parentDir, entry, depth) {
   const open = isDir && expanded.has(rel);
   const locked = NEVER_PUSH.includes(entry.name);
   const parent = pickedParent(side, rel);
-  const title = locked ? 'each side keeps its own; never copied' : parent ? `included with ${parent}/` : undefined;
+  const title = parent ? `included with ${parent}/` : undefined;
   const box = el('input', { type: 'checkbox', 'aria-label': entry.name, disabled: locked || !!parent, title });
   box.checked = !locked && (!!parent || picked[side].has(rel));
   box.addEventListener('click', (e) => e.stopPropagation());
@@ -271,7 +271,8 @@ function row(side, parentDir, entry, depth) {
       onclick: isDir ? () => toggle(rel) : undefined,
     },
     caret,
-    box,
+    // Each side keeps its own config, so it gets a lock that says why instead of a box.
+    locked ? el('span', { class: 'lock', title: `${entry.name} holds this side's own settings, like its database password, so it is never copied across` }, icon('lock')) : box,
     icon(isDir ? 'folder' : 'file'),
     el('span', { class: 'n', title: entry.name }, entry.name),
     badge ? badgeEl(badge, rel, entry, side) : el('span'),
@@ -602,6 +603,80 @@ async function restoreBackup(b) {
 
 for (const b of document.querySelectorAll('#backup-tabs button')) b.addEventListener('click', () => ((backupTab = b.dataset.tab), renderBackups()));
 $('backups-refresh').addEventListener('click', () => loadBackups());
+
+// ---- scrub ----
+
+let scrubState = null;
+
+async function loadScrub() {
+  if (!current) return;
+  try {
+    scrubState = await api(`scrub?env=${encodeURIComponent(current)}&scrub=1`);
+  } catch (e) {
+    scrubState = null;
+  }
+  renderScrub();
+}
+
+function renderScrub() {
+  const on = !!scrubState?.enabled;
+  $('scrub-on').checked = on;
+  $('scrub-path').textContent = on ? scrubState.path : '';
+  $('scrub-view').hidden = $('scrub-edit').hidden = !on;
+}
+
+async function setScrub(on) {
+  try {
+    scrubState = await api('run', { action: on ? 'scrub-on' : 'scrub-off', env: current });
+  } catch (e) {
+    showLog('scrub', { ok: false, log: e.message });
+  }
+  renderScrub();
+}
+
+// The plugin's own editor, for a lerd that has no lerd.edit.
+function textEditor(title, text) {
+  $('editor-title').textContent = title;
+  $('editor-text').value = text;
+  $('editor').showModal();
+  return new Promise((resolve) => {
+    const done = (v) => {
+      $('editor').close();
+      $('editor-save').onclick = $('editor-cancel').onclick = $('editor').oncancel = null;
+      resolve(v);
+    };
+    $('editor-save').onclick = () => done($('editor-text').value);
+    $('editor-cancel').onclick = () => done(null);
+    $('editor').oncancel = () => done(null);
+  });
+}
+
+async function editScrub() {
+  const label = `Runs on this site's database after every pull from ${current}`;
+  let text;
+  try {
+    text = await lerd.edit({ path: scrubState.path, content: scrubState.content, label });
+  } catch {
+    text = await textEditor(scrubState.path, scrubState.content);
+  }
+  if (text === null || text === scrubState.content) return;
+  try {
+    scrubState = await api('run', { action: 'scrub-save', env: current, content: text });
+    renderScrub();
+  } catch (e) {
+    showLog('scrub', { ok: false, log: e.message });
+  }
+}
+
+function viewScrub() {
+  const label = `Runs on this site's database after every pull from ${current}`;
+  if (config.local?.viewer) return lerd.view({ path: scrubState.path, content: scrubState.content, label });
+  confirmDialog(scrubState.path, scrubState.content || '(empty)', 'Close', { info: true });
+}
+
+$('scrub-on').addEventListener('change', (e) => setScrub(e.target.checked));
+$('scrub-edit').addEventListener('click', () => editScrub());
+$('scrub-view').addEventListener('click', () => viewScrub());
 
 // ---- dialogs ----
 
