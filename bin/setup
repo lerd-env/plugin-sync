@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// lerd remote-pull:setup --ssh user@host --path /remote/project [--ssh-port 22]
+//   [--files storage/app/public,public/uploads] [--sanitize .lerd/sanitize.sql]
+//   [--database name --db-user user --db-password pw --db-host h --db-port p]
+// Saves where this site's server is. The database settings are only needed
+// when the server's .env does not carry DB_DATABASE and friends.
+const { parseArgs } = require('../lib/args');
+const { loadConfig, saveConfig, checkRelative } = require('../lib/remote');
+
+const FLAGS = { ssh: 'ssh', path: 'path', 'ssh-port': 'ssh_port', sanitize: 'sanitize', database: 'database', 'db-user': 'db_user', 'db-password': 'db_password', 'db-host': 'db_host', 'db-port': 'db_port' };
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const site = opts._[0] || process.env.LERD_SITE;
+  if (!site) throw new Error('run it inside a linked project, or name the site: lerd remote-pull:setup <site> --ssh user@host --path /remote/project');
+  const config = loadConfig(site) || {};
+  for (const [flag, key] of Object.entries(FLAGS)) if (opts[flag] !== undefined) config[key] = opts[flag];
+  if (opts.files !== undefined) config.files = opts.files.split(',').map((f) => f.trim()).filter(Boolean).map(checkRelative);
+  if (config.sanitize) checkRelative(config.sanitize);
+  if (!config.ssh || !config.path) throw new Error('--ssh user@host and --path /remote/project are both needed');
+  saveConfig(site, config);
+  for (const [k, v] of Object.entries(config)) console.log(`${k.padEnd(12)} ${k === 'db_password' ? '(saved)' : Array.isArray(v) ? v.join(', ') : v}`);
+} catch (e) {
+  console.error(e.message);
+  process.exit(1);
+}

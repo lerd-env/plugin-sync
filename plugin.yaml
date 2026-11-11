@@ -1,0 +1,39 @@
+api_version: 1
+name: remote-pull
+lerd: ">=1.37"
+version: 0.1.0
+description: Pull a site's database and uploaded files from its server over SSH, with an optional sanitize step
+docs: DOCS.md
+icon: icon.svg
+
+# lerd remote-pull:setup | pull
+commands:
+  - name: setup
+    usage: "Save the site's server: setup --ssh user@host --path /remote/project [--files a,b] [--sanitize file.sql] [--database --db-user --db-password]"
+    run: bin/setup
+  - name: pull
+    usage: "Pull the database and files from the site's server: pull [site] [--db-only | --files-only]"
+    run: bin/pull
+
+site_commands:
+  - name: pull
+    label: Pull from server
+    description: Replace this site's database with a fresh copy from its server, after a snapshot, and sync its uploaded files
+    confirm: true
+    run: bin/pull
+
+mcp:
+  skill: SKILL.md
+  tools:
+    - name: pull
+      description: Replace a lerd site's local database with a fresh dump from its production or staging server over SSH, after a before-remote-pull snapshot, then sync its configured upload folders. The server is set once by the user with lerd remote-pull:setup
+      input_schema:
+        type: object
+        required: [site]
+        properties:
+          site: {type: string, description: lerd site name}
+          what: {type: string, enum: [both, db, files], description: What to pull; both when omitted}
+      run: bin/pull
+      timeout: 10m
+
+requires: [ssh, rsync]
