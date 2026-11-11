@@ -1,68 +1,84 @@
-# sync for Lerd
+# Sync for Lerd
 
-Bring a site's real data down from its server: the production or staging database over SSH, an optional SQL step that scrubs personal data from it, and the folders users upload into. Like `lando pull` or DDEV's hosting providers, for any server you can SSH into: Forge, Ploi, a VPS, a shared host.
+> Keep a [Lerd](https://lerd.sh) site and its servers in step. Pull the
+> production database and uploads down, push files back up, see what differs
+> side by side, and get back anything a transfer replaced.
 
-## Set up once per site
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Lerd plugin](https://img.shields.io/badge/lerd-plugin-ff2d20)](https://plugins.lerd.sh)
+[![Lerd 1.38+](https://img.shields.io/badge/lerd-1.38%2B-ff2d20)](https://lerd.sh)
+[![Reddit](https://img.shields.io/badge/Reddit-r%2Flerd-ff2d20?logo=reddit)](https://reddit.com/r/lerd)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/5JK54s7xCC)
 
-Inside the linked project:
+![The Sync tab showing a site and its production server side by side, with the files that differ marked](docs/tab.png)
+
+A local copy is only useful with real data in it, and real work eventually has to go back. This plugin talks to any server you can SSH into, Forge, Ploi, a VPS or a shared host, with one environment per server, such as production and staging. It pulls the database and the folders users upload into, scrubs personal data from the copy if you ask it to, pushes the files you pick, and keeps a backup of everything it replaces on either side.
+
+## Install
 
 ```bash
-lerd sync:setup --ssh forge@203.0.113.10 --path /home/forge/shop.com \
-  --files storage/app/public --sanitize .lerd/sanitize.sql
+lerd plugin install sync
+```
+
+## Use
+
+Save the site's server once, inside the linked project, then pull:
+
+```bash
+cd ~/code/shop
+lerd sync:setup --env production --ssh forge@203.0.113.10 --path /home/forge/shop.com --files storage/app/public
+lerd sync:pull
+```
+
+Every site gets a **Sync** tab in the dashboard, with the project as a tree on both sides, badges for what is only on one side or differs, lerd's own diff on a click, and the database and backups below. The site's **Commands** menu gets **Pull from server**, and AI assistants get `sync_pull`, `sync_status` and `sync_backups` through Lerd's MCP server; pushing, restoring and removing stay with you. The full instructions are on the plugin's **Documentation** tab in the dashboard.
+
+```bash
+lerd sync:status --dir wp-content            # what is only here, only there, or differs
+lerd sync:diff wp-content/themes/shop/style.css
+lerd sync:push --env production --paths wp-content/themes/shop
+lerd sync:push --env production --db         # replace the server's database, after a backup
+lerd sync:backups --restore pull:20261111T111800
 ```
 
 | Option | Meaning |
 |---|---|
+| `--env` | The environment, such as `production` or `staging`; push always needs it |
 | `--ssh user@host`, `--ssh-port` | The server, reached with your own SSH key or agent |
 | `--path` | The project's folder on the server |
-| `--files a,b` | Folders inside the project to copy down, comma separated |
-| `--sanitize file.sql` | SQL in the project to run over the pulled database, such as replacing customers' emails |
-| `--scrub on` | Write a default scrub for the framework into `.lerd/scrub.sql` and run it after every pull |
-| `--database`, `--db-user`, `--db-password`, `--db-host`, `--db-port` | The server's database, when its `.env` does not say it with `DB_DATABASE`, `DB_USERNAME` and friends |
+| `--files a,b` | Folders a plain pull or push copies, such as uploads |
+| `--paths a,b` | Just these files and folders, for one pull or push |
+| `--url https://shop.com` | WordPress and Bedrock: the server's address, rewritten both ways in the database |
+| `--scrub on` | Scrub personal data after every pull, starting from a default for the framework |
+| `--never a,b` | Names, files or folders never synced, on top of config files, `.lerd/`, `.lerd.yaml` and `.git/` |
+| `--keep 10`, `--backup off` | How many backups each side keeps, or none at all |
+| `--database`, `--db-user`, `--db-password` | The server's database, when its `.env` or `wp-config.php` does not say it |
 
-SSH runs with `BatchMode=yes`, so it never waits on a prompt: the key must be loaded in an agent or have no passphrase, and the server must already be in your `known_hosts` (connect once with `ssh` to accept it).
-
-## Pull
-
-```bash
-lerd sync:pull                 # database and files
-lerd sync:pull --db-only
-lerd sync:pull --files-only
-```
-
-The site's Commands menu on the dashboard gets **Pull from server**, and AI assistants get `sync_pull`. Each server is an environment (`setup --env staging ...`), and a site with several names the one to pull from with `--env`.
-
-## The Sync tab
-
-The dashboard gets a **Sync** tab on every site: a card per environment with its connection status, a two-pane browser of the project here and on the server where you tick files or folders and push or pull them, and the database pull and push.
-
-![The Sync tab](docs/tab.png)
-
-## Push
-
-```bash
-lerd sync:push --env staging --dry-run   # preview the folders
-lerd sync:push --env staging             # send the folders
-lerd sync:push --env staging --db        # and replace the server's database, after a backup
-```
-
-Push is terminal only and always names its environment. A database push asks for the environment's name typed back, or `--yes`. For WordPress, `setup --url https://shop.com` rewrites the site's address both ways with `wp search-replace`, serialized data included.
-
-## From the terminal
-
-`lerd sync:status` lists what differs, `lerd sync:diff <file>` prints a unified diff, `sync:push` and `sync:pull` take `--paths a,b` for just some files, and `lerd sync:backups` lists, restores and removes backups. The diff and viewer in the tab need lerd 1.39 or newer; on an older lerd the rest works.
+SSH runs with `BatchMode=yes`, so it never waits on a prompt: the key must be loaded in an agent or have no passphrase, and the server must already be in your `known_hosts`.
 
 ## What it does
 
-The database is dumped on the server with the server's own `mysqldump`, `mariadb-dump` or `pg_dump`, streamed back over SSH, and imported with `lerd db:import --fresh` after `lerd db:snapshot before-sync-pull`, so `lerd db:restore` undoes a pull. A failed dump stops before anything local changes. A MariaDB dump going into a MySQL service has its MariaDB-only collations and `NO_AUTO_CREATE_USER` swapped for what MySQL accepts. The sanitize SQL then runs through `lerd db:shell` and stops at its first failing statement, which fails the pull with a warning that the data may still be unscrubbed. Folders are copied with `rsync -az` and nothing local is deleted.
+- Dumps the database on the server with its own `mysqldump`, `mariadb-dump` or `pg_dump`, and imports it after a `before-sync-pull` snapshot, so `lerd db:restore` undoes a pull. A failed dump stops before anything local changes.
+- Swaps collations MySQL and MariaDB refuse from each other, and rewrites a WordPress site's address both ways with `wp search-replace`, serialized data included.
+- Runs the scrub SQL in `.lerd/scrub.sql`, or an environment's own file, after a pull, stopping and failing the pull at its first failing statement.
+- Pushes a database only after you type the environment's name, uploading the dump, checking its size, backing the server's database up and putting that backup back if the import fails.
+- Copies files with `rsync` and never deletes anything on either side. Each side's config (`.env`, `.env.*`, `wp-config.php`, Drupal's `settings.php`), its lerd setup and its `.git/` are never copied, and neither is anything you add to the never sync list.
+- Keeps every file a transfer replaces, on the server for a push and on your machine for a pull, and drops the oldest past the number you keep.
 
-## What it reads, writes and sends
+## What it reads, changes and sends
 
-The database password, given to `setup` or read from the server's own config, reaches the server on ssh's input, never on a command line, so other users of a shared host cannot see it in their process list. On the server it runs the database dump, reads the `DB_*` keys of the project's `.env` when you did not give them to `setup` (the rest of that file is not kept), and reads the folders you listed. A pull writes nothing on the server. A push writes the listed or picked files into the project there (never deleting, never sending a `.env` or `wp-config.php`), keeping each file it replaces under `~/.lerd-sync/files/` unless backups are turned off, and with `--db` uploads a dump to `~/.lerd-sync/`, backs the database up beside it (kept, readable only by you), imports, and deletes the upload. The tab lists the folders it shows on the server with `find` and reads a file there with `cat` to show it. Locally it writes the site's Lerd database and the listed folders inside the project. The dump passes through `tmp/` in the plugin's data folder and is deleted after the import. Each site's settings, including a database password you give `setup`, are kept in `sites/<site>.json` in the data folder, readable only by you. Nothing is sent anywhere but the server you named.
+On the server it reads the project's `.env` or `wp-config.php` for the database settings (nothing else from them is kept), lists folders with `find`, reads a file with `cat` to show it, and dumps the database. A pull writes nothing there. A push writes the files you send into the project, keeps what they replace under `~/.lerd-sync/files/`, and with `--db` uploads a dump to `~/.lerd-sync/`, imports it and keeps the backup beside it, all readable only by you. The database password reaches the server on ssh's input, never on a command line, so other users of a shared host cannot see it. Locally it writes the site's Lerd database, the files you pull, the scrub file in `.lerd/`, and backups and settings in the plugin's data folder, readable only by you. Nothing is sent anywhere but the server you named.
 
 ## Requirements
 
-Node, which Lerd installs, `ssh` and `rsync` locally, and on the server the database's dump tool and `rsync`.
+- Lerd 1.38 or newer, and Node, which Lerd installs; the tab's diff and file viewer need Lerd 1.39, and its scrub editor is a plain text box before that
+- `ssh` and `rsync` on this machine, and `rsync` and the database's dump tool on the server
+
+## Development
+
+```bash
+node --test test/
+lerd plugin install .
+```
 
 ## License
 
