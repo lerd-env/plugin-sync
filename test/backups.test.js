@@ -37,10 +37,10 @@ test('listLocalBackups counts the files and bytes of each pull backup, newest fi
 test('the server listing finds this site\'s file and database backups only', () => {
   const home = tmp('rb');
   put(home, {
-    '.lerd-remote-pull/files/shop-20260101T000000/wp/a.css': 'aaaa',
-    '.lerd-remote-pull/files/shop-2-20260101T000000/x': 'x',
-    '.lerd-remote-pull/backup-shop_prod-20260102T000000.sql': 'dump!',
-    '.lerd-remote-pull/backup-other-20260102T000000.sql': 'no',
+    '.lerd-sync/files/shop-20260101T000000/wp/a.css': 'aaaa',
+    '.lerd-sync/files/shop-2-20260101T000000/x': 'x',
+    '.lerd-sync/backup-shop_prod-20260102T000000.sql': 'dump!',
+    '.lerd-sync/backup-other-20260102T000000.sql': 'no',
   });
   const out = sh(listRemoteBackupsCommand('shop', 'shop_prod'), home);
   assert.deepEqual(parseRemoteBackups(out), [
@@ -72,12 +72,12 @@ test('parseSnapshots reads lerd db:snapshots, newest first as lerd prints it', (
   const out = [
     'NAME                                CREATED           DATABASE  SIZE      BRANCH  RETENTION',
     'auto-20261111-101830                2026-11-11 12:18  rp_wp     21.5 KiB  -       auto, ~19h',
-    'before-remote-pull-20261111-100620  2026-11-11 12:06  rp_wp     21.5 KiB  -       manual',
+    'before-sync-pull-20261111-100620  2026-11-11 12:06  rp_wp     21.5 KiB  -       manual',
     '',
   ].join('\n');
   assert.deepEqual(parseSnapshots(out), [
     { id: 'snap:auto-20261111-101830', kind: 'snapshot', name: 'auto-20261111-101830', created: '2026-11-11 12:18', size: '21.5 KiB' },
-    { id: 'snap:before-remote-pull-20261111-100620', kind: 'snapshot', name: 'before-remote-pull-20261111-100620', created: '2026-11-11 12:06', size: '21.5 KiB' },
+    { id: 'snap:before-sync-pull-20261111-100620', kind: 'snapshot', name: 'before-sync-pull-20261111-100620', created: '2026-11-11 12:06', size: '21.5 KiB' },
   ]);
   assert.deepEqual(parseSnapshots('No snapshots for rp_wp\n'), []);
 });
@@ -87,14 +87,14 @@ const { removeRemoteCommand } = require('../lib/backups');
 test('removeRemoteCommand deletes just the one backup it names', () => {
   const home = tmp('rm');
   put(home, {
-    '.lerd-remote-pull/files/shop-20260101T000000/a.css': 'a',
-    '.lerd-remote-pull/files/shop-20260201T000000/b.css': 'b',
-    '.lerd-remote-pull/backup-shop_prod-20260102T000000.sql': 'x',
-    '.lerd-remote-pull/backup-shop_prod-20260103T000000.sql': 'y',
+    '.lerd-sync/files/shop-20260101T000000/a.css': 'a',
+    '.lerd-sync/files/shop-20260201T000000/b.css': 'b',
+    '.lerd-sync/backup-shop_prod-20260102T000000.sql': 'x',
+    '.lerd-sync/backup-shop_prod-20260103T000000.sql': 'y',
   });
   sh(removeRemoteCommand(backupRef('shop', 'push:shop-20260101T000000')), home);
   sh(removeRemoteCommand(backupRef('shop', 'db:backup-shop_prod-20260102T000000.sql')), home);
-  assert.deepEqual(fs.readdirSync(path.join(home, '.lerd-remote-pull/files')), ['shop-20260201T000000']);
-  assert.deepEqual(fs.readdirSync(path.join(home, '.lerd-remote-pull')).sort(), ['backup-shop_prod-20260103T000000.sql', 'files']);
+  assert.deepEqual(fs.readdirSync(path.join(home, '.lerd-sync/files')), ['shop-20260201T000000']);
+  assert.deepEqual(fs.readdirSync(path.join(home, '.lerd-sync')).sort(), ['backup-shop_prod-20260103T000000.sql', 'files']);
   assert.throws(() => removeRemoteCommand({ kind: 'pull', name: '20260101T000000' }), /server/);
 });

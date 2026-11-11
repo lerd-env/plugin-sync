@@ -76,8 +76,8 @@ test('transferArgs sends picked paths relative to the project, never the server 
   assert.ok(pull.includes('--exclude=wp-config.php') && pull.includes('--exclude=.env'));
   assert.throws(() => transferArgs('pull', env, '/s', ['.env']), /never copied/);
   // Whatever a transfer replaces is kept first, on the side it was replaced on.
-  const kept = transferArgs('push', env, '/home/u/shop', ['a.css'], '/home/forge/.lerd-remote-pull/files/20261111T120000');
-  assert.ok(kept.includes('--backup') && kept.includes('--backup-dir=/home/forge/.lerd-remote-pull/files/20261111T120000'));
+  const kept = transferArgs('push', env, '/home/u/shop', ['a.css'], '/home/forge/.lerd-sync/files/20261111T120000');
+  assert.ok(kept.includes('--backup') && kept.includes('--backup-dir=/home/forge/.lerd-sync/files/20261111T120000'));
   assert.throws(() => transferArgs('push', env, '/s', ['a'], 'relative/dir'), /full path/);
   assert.throws(() => transferArgs('push', env, '/s', ['../x']), /inside the project/);
   assert.throws(() => transferArgs('push', env, '/s', ['wp-config.php']), /never copied/);

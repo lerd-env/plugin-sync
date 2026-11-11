@@ -116,7 +116,7 @@ async function backupFiles(site, q) {
   const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
   const ref = backupRef(site, q.get('id'));
   if (ref.kind !== 'push' && ref.kind !== 'pull') throw new Error('only file backups have files to list');
-  const dir = ref.kind === 'pull' ? path.join(localBackups(site), ref.name) : `${remoteHome(env)}/.lerd-remote-pull/files/${ref.name}`;
+  const dir = ref.kind === 'pull' ? path.join(localBackups(site), ref.name) : `${remoteHome(env)}/.lerd-sync/files/${ref.name}`;
   const out = ref.kind === 'pull' ? spawnSync('sh', ['-c', backupFilesCommand(dir)], { encoding: 'utf8' }).stdout : ssh(env, backupFilesCommand(dir));
   const files = out.split('\n').filter(Boolean).map((l) => {
     const [size, ...p] = l.split('\t');
@@ -140,7 +140,7 @@ async function restore(site, body) {
   }
   if (ref.kind === 'push') {
     const keep = backupDir('push', env, site);
-    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, restoreFilesCommand(`${remoteHome(env)}/.lerd-remote-pull/files/${ref.name}`, env.path, keep)], { encoding: 'utf8' });
+    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, restoreFilesCommand(`${remoteHome(env)}/.lerd-sync/files/${ref.name}`, env.path, keep)], { encoding: 'utf8' });
     if (r.status !== 0) return { ok: false, log: r.stderr || 'restore failed' };
     const note = backupNote('push', env, keep);
     pruneBackups('push', env, keep);
@@ -150,9 +150,9 @@ async function restore(site, body) {
     if (body.confirm !== env.name) throw new Error('restoring a server database needs the environment name confirmed');
     const db = remoteDatabase(env);
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
-    const upload = `.lerd-remote-pull/push-${stamp}.sql`;
-    const size = ssh(env, `cp -- ${sh('.lerd-remote-pull/' + ref.name)} ${sh(upload)} && wc -c < ${sh(upload)}`).trim();
-    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, `.lerd-remote-pull/backup-${db.database}-${stamp}.sql`, size)], { encoding: 'utf8' });
+    const upload = `.lerd-sync/push-${stamp}.sql`;
+    const size = ssh(env, `cp -- ${sh('.lerd-sync/' + ref.name)} ${sh(upload)} && wc -c < ${sh(upload)}`).trim();
+    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, `.lerd-sync/backup-${db.database}-${stamp}.sql`, size)], { encoding: 'utf8' });
     return { ok: r.status === 0, log: `${r.stdout || ''}${r.stderr || ''}`.trim() || (r.status === 0 ? 'restored' : 'restore failed') };
   }
   const db = await localDb(site);
@@ -194,7 +194,7 @@ async function readBackupFile(site, env, ref, rel) {
     return text;
   }
   if (ref.kind !== 'push') throw new Error('only file backups hold files');
-  const r = spawnSync('ssh', [...sshArgs(env), env.ssh, readRemoteCommand(`${remoteHome(env)}/.lerd-remote-pull/files/${ref.name}`, rel)], { maxBuffer: 3 << 20 });
+  const r = spawnSync('ssh', [...sshArgs(env), env.ssh, readRemoteCommand(`${remoteHome(env)}/.lerd-sync/files/${ref.name}`, rel)], { maxBuffer: 3 << 20 });
   if (r.status !== 0) throw new Error(String(r.stderr).trim() || 'could not read it on the server');
   const text = asText(r.stdout);
   if (text === null) throw new Error('not text, or over 2 MB, so it cannot be shown');

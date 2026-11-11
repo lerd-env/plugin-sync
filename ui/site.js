@@ -437,7 +437,7 @@ function renderDb() {
 async function runDb(direction) {
   let body = { action: direction, env: current, what: 'db' };
   if (direction === 'pull') {
-    const ok = await confirmDialog(`Pull the ${current} database?`, "This site's local database is replaced. A before-remote-pull snapshot is taken first, which lerd db:restore brings back.", 'Pull database');
+    const ok = await confirmDialog(`Pull the ${current} database?`, "This site's local database is replaced. A before-sync-pull snapshot is taken first, which lerd db:restore brings back.", 'Pull database');
     if (!ok) return;
   } else {
     const typed = await confirmDialog(`Replace the ${current} database?`, `The server's database is overwritten with this site's. It is backed up on the server first. Type ${current} to go on.`, 'Push database', { typed: current });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lerd remote-pull:push [site] --env production [--files] [--db] [--dry-run] [--yes]
+// lerd sync:push [site] --env production [--files] [--db] [--dry-run] [--yes]
 // Sends the listed folders to the server, and with --db replaces the server's
 // database with the local one, after a backup kept on the server. With neither
 // --files nor --db only the folders go.
@@ -59,7 +59,7 @@ async function pushDatabase(site, env) {
     if (/mariadb/i.test(version)) await rewriteFile(file, mysqlToMariadb);
 
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
-    const dir = '.lerd-remote-pull';
+    const dir = '.lerd-sync';
     const upload = `${dir}/push-${stamp}.sql`;
     const backup = `${dir}/backup-${db.database}-${stamp}.sql`;
     console.log(`uploading to ${env.ssh}`);
@@ -75,7 +75,7 @@ async function pushDatabase(site, env) {
 }
 
 function pushFiles(site, env, dryRun) {
-  if (!(env.files || []).length) return console.log(`no folders listed for ${env.name}; add them with lerd remote-pull:setup --env ${env.name} --files a,b`);
+  if (!(env.files || []).length) return console.log(`no folders listed for ${env.name}; add them with lerd sync:setup --env ${env.name} --files a,b`);
   const keep = dryRun ? null : backupDir('push', env, site.name);
   for (const dir of env.files) {
     if (!fs.existsSync(path.join(site.path, dir))) {
@@ -98,7 +98,7 @@ function pushFiles(site, env, dryRun) {
 (async () => {
   const opts = parseArgs(process.argv.slice(2), ['files', 'db', 'dry-run', 'yes']);
   const name = opts._[0] || process.env.LERD_SITE;
-  if (!name) throw new Error('usage: lerd remote-pull:push [site] --env name [--files] [--db], or run it inside a linked project');
+  if (!name) throw new Error('usage: lerd sync:push [site] --env name [--files] [--db], or run it inside a linked project');
   const env = pickEnv(loadConfig(name), opts.env, { required: true });
   const site = await findSite(name);
   const files = opts.files || !opts.db;

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lerd remote-pull:pull [site] [--env production] [--db-only | --files-only]
+// lerd sync:pull [site] [--env production] [--db-only | --files-only]
 // Replaces the site's lerd database with a fresh dump from its server, after a
 // snapshot, points its URLs at the local site, runs the project's sanitize SQL
 // over it, and syncs the listed folders.
@@ -32,7 +32,7 @@ async function pullDatabase(site, config) {
     if (fs.statSync(file).size === 0) throw new Error('the server returned an empty dump; nothing was imported');
     if (/^mysql(-|$)/.test(service)) await rewriteFile(file, mariadbToMysql);
     lerd(['db:create', database, '-s', service], site.path);
-    lerd(['db:snapshot', 'before-remote-pull', '-s', service, '-d', database], site.path);
+    lerd(['db:snapshot', 'before-sync-pull', '-s', service, '-d', database], site.path);
     lerd(['db:import', file, '--fresh', '-s', service, '-d', database], site.path);
   } finally {
     fs.rmSync(file, { force: true });
@@ -81,7 +81,7 @@ function pullFiles(site, config) {
   const input = mcpInput();
   const opts = input ? { _: [input.site], env: input.env, 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
   const name = opts._[0] || process.env.LERD_SITE;
-  if (!name) throw new Error('usage: lerd remote-pull:pull [site] [--env name] [--db-only | --files-only], or run it inside a linked project');
+  if (!name) throw new Error('usage: lerd sync:pull [site] [--env name] [--db-only | --files-only], or run it inside a linked project');
   const config = pickEnv(loadConfig(name), opts.env);
   const site = await findSite(name);
   if (!opts['files-only']) await pullDatabase(site, config);

@@ -1,5 +1,5 @@
 api_version: 1
-name: remote-pull
+name: sync
 lerd: ">=1.37"
 version: 0.2.0
 description: Pull a site's database and uploaded files from its servers over SSH, or push them back, with an environment per server
@@ -7,7 +7,7 @@ docs: DOCS.md
 icon: icon.svg
 screenshots: [docs/tab.png]
 
-# lerd remote-pull:setup | pull | push
+# lerd sync:setup | pull | push
 commands:
   - name: setup
     usage: "Save one of the site's servers, or list them with no options: setup [--env production] --ssh user@host --path /remote/project [--url https://example.com] [--files a,b] [--sanitize file.sql] [--database --db-user --db-password] | --env name --remove"
@@ -30,7 +30,7 @@ mcp:
   skill: SKILL.md
   tools:
     - name: pull
-      description: Replace a lerd site's local database with a fresh dump from its production or staging server over SSH, after a before-remote-pull snapshot, then sync its configured upload folders. The server is set once by the user with lerd remote-pull:setup
+      description: Replace a lerd site's local database with a fresh dump from its production or staging server over SSH, after a before-sync-pull snapshot, then sync its configured upload folders. The server is set once by the user with lerd sync:setup
       input_schema:
         type: object
         required: [site]
@@ -74,4 +74,4 @@ api:
     timeout: 10m
 
 ui:
-  site_tab: {title: Remote, entry: ui/site.html}
+  site_tab: {title: Sync, entry: ui/site.html}
