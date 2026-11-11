@@ -29,7 +29,17 @@ lerd remote-pull:pull --db-only
 lerd remote-pull:pull --files-only
 ```
 
-The site's Commands menu on the dashboard gets **Pull from server**, and AI assistants get `remote-pull_pull`.
+The site's Commands menu on the dashboard gets **Pull from server**, and AI assistants get `remote-pull_pull`. Each server is an environment (`setup --env staging ...`), and a site with several names the one to pull from with `--env`.
+
+## Push
+
+```bash
+lerd remote-pull:push --env staging --dry-run   # preview the folders
+lerd remote-pull:push --env staging             # send the folders
+lerd remote-pull:push --env staging --db        # and replace the server's database, after a backup
+```
+
+Push is terminal only and always names its environment. A database push asks for the environment's name typed back, or `--yes`. For WordPress, `setup --url https://shop.com` rewrites the site's address both ways with `wp search-replace`, serialized data included.
 
 ## What it does
 
@@ -37,7 +47,7 @@ The database is dumped on the server with the server's own `mysqldump`, `mariadb
 
 ## What it reads, writes and sends
 
-On the server it runs the database dump, reads the `DB_*` keys of the project's `.env` when you did not give them to `setup` (the rest of that file is not kept), and reads the folders you listed. It writes nothing on the server. Locally it writes the site's Lerd database and the listed folders inside the project. The dump passes through `tmp/` in the plugin's data folder and is deleted after the import. Each site's settings, including a database password you give `setup`, are kept in `sites/<site>.json` in the data folder, readable only by you. Nothing is sent anywhere but the server you named.
+On the server it runs the database dump, reads the `DB_*` keys of the project's `.env` when you did not give them to `setup` (the rest of that file is not kept), and reads the folders you listed. A pull writes nothing on the server. A push writes the listed folders into the project there (never deleting, never sending a `.env` or `wp-config.php`), and with `--db` uploads a dump to `~/.lerd-remote-pull/`, backs the database up beside it (kept, readable only by you), imports, and deletes the upload. Locally it writes the site's Lerd database and the listed folders inside the project. The dump passes through `tmp/` in the plugin's data folder and is deleted after the import. Each site's settings, including a database password you give `setup`, are kept in `sites/<site>.json` in the data folder, readable only by you. Nothing is sent anywhere but the server you named.
 
 ## Requirements
 

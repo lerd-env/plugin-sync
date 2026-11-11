@@ -1,0 +1,108 @@
+#!/usr/bin/env node
+// lerd remote-pull:push [site] --env production [--files] [--db] [--dry-run] [--yes]
+// Sends the listed folders to the server, and with --db replaces the server's
+// database with the local one, after a backup kept on the server. With neither
+// --files nor --db only the folders go.
+const fs = require('node:fs');
+const path = require('node:path');
+const readline = require('node:readline');
+const { spawnSync } = require('node:child_process');
+const { parseArgs } = require('../lib/args');
+const { site: findSite, lerd, siteDatabase, siteUrl } = require('../lib/lerd');
+const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
+
+// Server-side settings a local copy would break, never sent from a pushed folder.
+const NEVER_PUSH = ['.env', 'wp-config.php'];
+
+function ask(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => rl.question(question, (a) => (rl.close(), resolve(a.trim()))));
+}
+
+// Overwriting a server's database cannot be taken back from here, so it needs
+// the environment's name typed, or --yes where nobody can type.
+async function confirmDatabase(env, opts) {
+  if (opts.yes) return;
+  if (!process.stdin.isTTY) throw new Error('pushing a database replaces the server\'s data; pass --yes to confirm');
+  const answer = await ask(`This replaces the ${env.name} database on ${env.ssh}. Type ${env.name} to go on: `);
+  if (answer !== env.name) throw new Error('not confirmed; nothing was pushed');
+}
+
+async function pushDatabase(site, env) {
+  const service = (site.services || []).find((s) => engineOf(s));
+  if (!service) throw new Error(`${site.name} uses no MySQL or PostgreSQL service in lerd`);
+  if (engineOf(service) !== 'mysql') throw new Error('pushing a database works for MySQL and MariaDB sites only');
+  const database = siteDatabase(site);
+  const db = remoteDatabase(env);
+  const { pw, conn } = mysqlConn(db);
+
+  const tmp = path.join(process.env.LERD_PLUGIN_DATA, 'tmp');
+  fs.mkdirSync(tmp, { recursive: true });
+  const file = path.join(tmp, `${site.name}-push.sql`);
+  try {
+    if (env.url) {
+      // wp-cli writes the rewritten dump without touching the local database.
+      console.log(`exporting ${database}, replacing ${siteUrl(site)} with ${env.url}`);
+      const fd = fs.openSync(file, 'w', 0o600);
+      try {
+        const r = spawnSync(process.env.LERD_BIN, ['wp', 'search-replace', siteUrl(site), env.url, '--all-tables', '--skip-columns=guid', '--export'], { cwd: site.path, stdio: ['ignore', fd, 'inherit'] });
+        if (r.status !== 0) throw new Error('wp search-replace --export failed; nothing was pushed');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } else {
+      console.log(`exporting ${database}`);
+      lerd(['db:export', '-s', service, '-d', database, '-o', file], site.path);
+    }
+    if (!fs.existsSync(file) || fs.statSync(file).size === 0) throw new Error('the local export is empty; nothing was pushed');
+
+    const version = ssh(env, `${pw}mysql ${conn} -N -e 'SELECT VERSION()'`).trim();
+    if (/mariadb/i.test(version)) await rewriteFile(file, mysqlToMariadb);
+
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+    const dir = '.lerd-remote-pull';
+    const upload = `${dir}/push-${stamp}.sql`;
+    const backup = `${dir}/backup-${db.database}-${stamp}.sql`;
+    console.log(`uploading to ${env.ssh}`);
+    const up = spawnSync('ssh', ['-C', ...sshArgs(env), env.ssh, `umask 077; mkdir -p ${dir} && cat > ${sh(upload)}`], { stdio: [fs.openSync(file, 'r'), 'inherit', 'inherit'] });
+    if (up.status !== 0) throw new Error('the upload failed; the server was not changed');
+    console.log(`backing up and importing into ${db.database}`);
+    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, backup, fs.statSync(file).size)], { stdio: ['ignore', 'inherit', 'inherit'] });
+    if (r.status !== 0) throw new Error(`pushing the database to ${env.name} failed`);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+
+function pushFiles(site, env, dryRun) {
+  if (!(env.files || []).length) return console.log(`no folders listed for ${env.name}; add them with lerd remote-pull:setup --env ${env.name} --files a,b`);
+  for (const dir of env.files) {
+    if (!fs.existsSync(path.join(site.path, dir))) {
+      console.log(`skipping ${dir}/, which this site does not have`);
+      continue;
+    }
+    console.log(`${dryRun ? 'would send' : 'sending'} ${dir}/`);
+    // No --delete: a file only the server has, such as a fresh upload, is left alone.
+    const args = ['-az', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
+    const r = spawnSync('rsync', args, { stdio: ['ignore', 'inherit', 'inherit'] });
+    if (r.error) throw r.error;
+    if (r.status !== 0) throw new Error(`rsync of ${dir} failed`);
+  }
+}
+
+(async () => {
+  const opts = parseArgs(process.argv.slice(2), ['files', 'db', 'dry-run', 'yes']);
+  const name = opts._[0] || process.env.LERD_SITE;
+  if (!name) throw new Error('usage: lerd remote-pull:push [site] --env name [--files] [--db], or run it inside a linked project');
+  const env = pickEnv(loadConfig(name), opts.env, { required: true });
+  const site = await findSite(name);
+  const files = opts.files || !opts.db;
+  if (opts.db && opts['dry-run']) throw new Error('--dry-run previews files only; leave out --db');
+  if (opts.db) await confirmDatabase(env, opts);
+  if (files) pushFiles(site, env, opts['dry-run']);
+  if (opts.db) await pushDatabase(site, env);
+  console.log(`${name}: ${opts['dry-run'] ? 'previewed a push to' : 'pushed to'} ${env.name} (${env.ssh})`);
+})().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});

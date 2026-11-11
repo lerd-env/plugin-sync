@@ -1,19 +1,22 @@
 api_version: 1
 name: remote-pull
 lerd: ">=1.37"
-version: 0.1.0
-description: Pull a site's database and uploaded files from its server over SSH, with an optional sanitize step
+version: 0.2.0
+description: Pull a site's database and uploaded files from its servers over SSH, or push them back, with an environment per server
 docs: DOCS.md
 icon: icon.svg
 
-# lerd remote-pull:setup | pull
+# lerd remote-pull:setup | pull | push
 commands:
   - name: setup
-    usage: "Save the site's server: setup --ssh user@host --path /remote/project [--files a,b] [--sanitize file.sql] [--database --db-user --db-password]"
+    usage: "Save one of the site's servers, or list them with no options: setup [--env production] --ssh user@host --path /remote/project [--url https://example.com] [--files a,b] [--sanitize file.sql] [--database --db-user --db-password] | --env name --remove"
     run: bin/setup
   - name: pull
-    usage: "Pull the database and files from the site's server: pull [site] [--db-only | --files-only]"
+    usage: "Pull the database and files from one of the site's servers: pull [site] [--env name] [--db-only | --files-only]"
     run: bin/pull
+  - name: push
+    usage: "Send the listed folders to a server, and with --db replace its database after a backup: push [site] --env name [--files] [--db] [--dry-run] [--yes]"
+    run: bin/push
 
 site_commands:
   - name: pull
@@ -33,6 +36,7 @@ mcp:
         properties:
           site: {type: string, description: lerd site name}
           what: {type: string, enum: [both, db, files], description: What to pull; both when omitted}
+          env: {type: string, description: "Environment to pull from, like production or staging; needed only when the site has more than one"}
       run: bin/pull
       timeout: 10m
 

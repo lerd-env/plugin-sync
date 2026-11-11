@@ -7,4 +7,4 @@ description: Bring a lerd site's database and uploaded files down from its produ
 
 A site has to be set up once by the user with `lerd remote-pull:setup --ssh user@host --path /remote/project`, adding `--files storage/app/public` for uploads and `--sanitize <file.sql>` for SQL that scrubs personal data after the import. When the tool says a site has no server, tell the user that command; never guess hosts or credentials. SSH has to work without a prompt, with a key or an agent.
 
-Pass `what: db` or `what: files` to pull only one of them.
+Pass `what: db` or `what: files` to pull only one of them. A site with several environments (production, staging) needs `env`. Pushing to a server is not offered here: when the user asks, tell them `lerd remote-pull:push --env <name>` and let them run it.

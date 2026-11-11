@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// lerd remote-pull:pull [site] [--db-only | --files-only]
+// lerd remote-pull:pull [site] [--env production] [--db-only | --files-only]
 // Replaces the site's lerd database with a fresh dump from its server, after a
-// snapshot, runs the project's sanitize SQL over it, and syncs the listed folders.
+// snapshot, points its URLs at the local site, runs the project's sanitize SQL
+// over it, and syncs the listed folders.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
-const { site: findSite, lerd, lerdWithInput } = require('../lib/lerd');
-const { loadConfig, engineOf, dumpCommand, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
+const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl } = require('../lib/lerd');
+const { loadConfig, pickEnv, engineOf, dumpCommand, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
 async function pullDatabase(site, config) {
   const service = (site.services || []).find((s) => engineOf(s));
   if (!service) throw new Error(`${site.name} uses no MySQL or PostgreSQL service in lerd`);
-  if (!site.db_database) throw new Error(`lerd does not know ${site.name}'s database name`);
+  const database = siteDatabase(site);
   const engine = engineOf(service);
   const db = remoteDatabase(config);
 
@@ -29,11 +30,17 @@ async function pullDatabase(site, config) {
     }
     if (fs.statSync(file).size === 0) throw new Error('the server returned an empty dump; nothing was imported');
     if (/^mysql(-|$)/.test(service)) await rewriteFile(file, mariadbToMysql);
-    lerd(['db:create', site.db_database, '-s', service], site.path);
-    lerd(['db:snapshot', 'before-remote-pull', '-s', service, '-d', site.db_database], site.path);
-    lerd(['db:import', file, '--fresh', '-s', service, '-d', site.db_database], site.path);
+    lerd(['db:create', database, '-s', service], site.path);
+    lerd(['db:snapshot', 'before-remote-pull', '-s', service, '-d', database], site.path);
+    lerd(['db:import', file, '--fresh', '-s', service, '-d', database], site.path);
   } finally {
     fs.rmSync(file, { force: true });
+  }
+  // A WordPress database names its own address in options and content, so
+  // without this the local copy redirects to the server.
+  if (config.url) {
+    console.log(`replacing ${config.url} with ${siteUrl(site)}`);
+    lerd(['wp', 'search-replace', config.url, siteUrl(site), '--all-tables', '--skip-columns=guid', '--report-changed-only'], site.path);
   }
   if (config.sanitize) {
     const sql = path.join(site.path, config.sanitize);
@@ -44,7 +51,7 @@ async function pullDatabase(site, config) {
     // psql carries on past errors unless told otherwise.
     const stop = engine === 'postgres' ? '\\set ON_ERROR_STOP on\n' : '';
     try {
-      lerdWithInput(['db:shell', '-s', service, '-d', site.db_database], site.path, stop + fs.readFileSync(sql, 'utf8'));
+      lerdWithInput(['db:shell', '-s', service, '-d', database], site.path, stop + fs.readFileSync(sql, 'utf8'));
     } catch {
       throw new Error(`${config.sanitize} failed, so the pulled database may still hold unscrubbed data`);
     }
@@ -66,15 +73,14 @@ function pullFiles(site, config) {
 
 (async () => {
   const input = mcpInput();
-  const opts = input ? { _: [input.site], 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
+  const opts = input ? { _: [input.site], env: input.env, 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
   const name = opts._[0] || process.env.LERD_SITE;
-  if (!name) throw new Error('usage: lerd remote-pull:pull [site] [--db-only | --files-only], or run it inside a linked project');
-  const config = loadConfig(name);
-  if (!config) throw new Error(`${name} has no server set; run lerd remote-pull:setup --ssh user@host --path /remote/project in the project`);
+  if (!name) throw new Error('usage: lerd remote-pull:pull [site] [--env name] [--db-only | --files-only], or run it inside a linked project');
+  const config = pickEnv(loadConfig(name), opts.env);
   const site = await findSite(name);
   if (!opts['files-only']) await pullDatabase(site, config);
   if (!opts['db-only']) pullFiles(site, config);
-  console.log(`${name}: pulled from ${config.ssh}`);
+  console.log(`${name}: pulled from ${config.name} (${config.ssh})`);
 })().catch((e) => {
   console.error(e.message);
   process.exit(1);
