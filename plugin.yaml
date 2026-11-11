@@ -31,7 +31,7 @@ commands:
 site_commands:
   - name: pull
     label: Pull from server
-    description: Replace this site's database with a fresh copy from its server, after a snapshot, and sync its uploaded files
+    description: Replace this site's database with a fresh copy from its production server, or its first environment, after a snapshot, and sync its uploaded files
     confirm: true
     run: bin/pull
 
@@ -73,7 +73,7 @@ mcp:
       run: bin/backups
       timeout: 2m
 
-requires: [ssh, rsync]
+requires: [ssh, rsync, diff]
 
 api:
   - path: state

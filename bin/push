@@ -11,7 +11,7 @@ const { parseArgs } = require('../lib/args');
 const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, passwordInput, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
 
-const { neverRules, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
+const { assertRsync, neverRules, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
@@ -76,6 +76,7 @@ async function pushDatabase(site, env) {
 
 function pushFiles(site, env, dryRun) {
   if (!(env.files || []).length) return console.log(`no folders listed for ${env.name}; add them with lerd sync:setup --env ${env.name} --files a,b`);
+  assertRsync();
   const keep = dryRun ? null : backupDir('push', env, site.name);
   for (const dir of env.files) {
     if (!fs.existsSync(path.join(site.path, dir))) {

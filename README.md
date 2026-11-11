@@ -30,7 +30,7 @@ lerd sync:setup --env production --ssh forge@203.0.113.10 --path /home/forge/sho
 lerd sync:pull
 ```
 
-Every site gets a **Sync** tab in the dashboard, with the project as a tree on both sides, badges for what is only on one side or differs, lerd's own diff on a click, and the database and backups below. The site's **Commands** menu gets **Pull from server**, and AI assistants get `sync_pull`, `sync_status` and `sync_backups` through Lerd's MCP server; pushing, restoring and removing stay with you. The full instructions are on the plugin's **Documentation** tab in the dashboard.
+Every site gets a **Sync** tab in the dashboard, with the project as a tree on both sides, badges for what is only on one side or differs, lerd's own diff on a click, and the database and backups below. The site's **Commands** menu gets **Pull from server**, which pulls from production when the site has several environments, and AI assistants get `sync_pull`, `sync_status` and `sync_backups` through Lerd's MCP server; pushing, restoring and removing stay with you. The full instructions are on the plugin's **Documentation** tab in the dashboard.
 
 ```bash
 lerd sync:status --dir wp-content            # what is only here, only there, or differs
@@ -66,12 +66,13 @@ SSH runs with `BatchMode=yes`, so it never waits on a prompt: the key must be lo
 
 ## What it reads, changes and sends
 
-On the server it reads the project's `.env` or `wp-config.php` for the database settings (nothing else from them is kept), lists folders with `find`, reads a file with `cat` to show it, and dumps the database. A pull writes nothing there. A push writes the files you send into the project, keeps what they replace under `~/.lerd-sync/files/`, and with `--db` uploads a dump to `~/.lerd-sync/`, imports it and keeps the backup beside it, all readable only by you. The database password reaches the server on ssh's input, never on a command line, so other users of a shared host cannot see it. Locally it writes the site's Lerd database, the files you pull, the scrub file in `.lerd/`, and backups and settings in the plugin's data folder, readable only by you. Nothing is sent anywhere but the server you named.
+On the server it reads the project's `.env` or `wp-config.php` for the database settings (nothing else from them is kept), lists folders with `find`, reads a file with `cat` to show it, and dumps the database. A pull writes nothing there. A push writes the files you send into the project, keeps what they replace under `~/.lerd-sync/files/`, and with `--db` uploads a dump to `~/.lerd-sync/`, imports it and keeps the backup beside it, all readable only by you. The database password reaches the server on ssh's input, never on a command line, so other users of a shared host cannot see it. Locally it reads the site's `wp-config.php` or `.env` only for its database name and, on WordPress and Bedrock, its table prefix, and it writes the site's Lerd database, the files you pull, the scrub file in `.lerd/`, and backups and settings in the plugin's data folder, readable only by you. Nothing is sent anywhere but the server you named.
 
 ## Requirements
 
 - Lerd 1.38 or newer, and Node, which Lerd installs; the tab's diff and file viewer need Lerd 1.39, and its scrub editor is a plain text box before that
-- `ssh` and `rsync` on this machine, and `rsync` and the database's dump tool on the server
+- `ssh`, `diff` and rsync 3 or newer on this machine; macOS ships an older rsync, so install it with `brew install rsync`
+- A Linux server, whose GNU `find` lists folders for the tab, with rsync and the database's dump tool
 
 ## Development
 

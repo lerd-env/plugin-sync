@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
-const { neverRules, backupDir, backupNote, pruneBackups } = require('../lib/files');
+const { assertRsync, neverRules, backupDir, backupNote, pruneBackups } = require('../lib/files');
 const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, dumpCommand, passwordInput, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
@@ -60,13 +60,14 @@ async function pullDatabase(site, config) {
 }
 
 function pullFiles(site, config) {
+  if ((config.files || []).length) assertRsync();
   const keep = backupDir('pull', config, site.name);
   for (const dir of config.files || []) {
     console.log(`syncing ${dir}/`);
     fs.mkdirSync(path.join(site.path, dir), { recursive: true });
     // No --delete: a file only the local copy has is left alone.
     const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
-    const r = spawnSync('rsync', ['-az', '--protect-args', ...backup, ...neverRules(config).map((r) => `--exclude=${r}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
+    const r = spawnSync('rsync', ['-az', '--protect-args', '--safe-links', ...backup, ...neverRules(config).map((r) => `--exclude=${r}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     if (r.error) throw r.error;
@@ -90,7 +91,8 @@ async function pullPaths(name, config, paths) {
   const opts = input ? { _: [input.site], env: input.env, paths: input.paths, 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
   const name = opts._[0] || process.env.LERD_SITE;
   if (!name) throw new Error('usage: lerd sync:pull [site] [--env name] [--db-only | --files-only], or run it inside a linked project');
-  const config = pickEnv(loadConfig(name), opts.env);
+  // The Commands menu cannot ask which environment, so it takes production, or the first.
+  const config = pickEnv(loadConfig(name), opts.env, { preferProduction: process.env.LERD_SURFACE === 'site_command' });
   if (opts.paths) return pullPaths(name, config, opts.paths);
   const site = await findSite(name);
   if (!opts['files-only']) await pullDatabase(site, config);

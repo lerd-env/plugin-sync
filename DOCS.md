@@ -45,7 +45,7 @@ SSH never prompts: your key must be loaded in an agent or have no passphrase, an
 | Where | How |
 |---|---|
 | Terminal | `lerd sync:pull`, `--env staging`, `--db-only` or `--files-only` |
-| Dashboard | the site's Commands menu, **Pull from server** |
+| Dashboard | the site's Commands menu, **Pull from server**, from production or the first environment |
 | AI assistant | `sync_pull` |
 
 The pull replaces the site's local database after a `before-sync-pull` snapshot, which `lerd db:restore` brings back. A failed dump stops before anything local changes. Files are added and updated, never deleted locally. With more than one environment, name the one to pull from.
