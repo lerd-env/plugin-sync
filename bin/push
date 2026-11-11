@@ -11,7 +11,7 @@ const { parseArgs } = require('../lib/args');
 const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, passwordInput, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
 
-const { NEVER_PUSH, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
+const { neverRules, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
@@ -85,7 +85,7 @@ function pushFiles(site, env, dryRun) {
     console.log(`${dryRun ? 'would send' : 'sending'} ${dir}/`);
     // No --delete: a file only the server has, such as a fresh upload, is left alone.
     const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
-    const args = ['-az', '--protect-args', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
+    const args = ['-az', '--protect-args', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...backup, ...neverRules(env).map((r) => `--exclude=${r}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
     const r = spawnSync('rsync', args, { stdio: ['ignore', 'inherit', 'inherit'] });
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(`rsync of ${dir} failed`);

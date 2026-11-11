@@ -10,7 +10,7 @@ const { parseArgs } = require('../lib/args');
 const { loadConfig, saveConfig, applyEnv } = require('../lib/remote');
 const { site: findSite, isWordPress } = require('../lib/lerd');
 
-const FLAGS = { keep: 'keep', backup: 'backup', files: 'files', ssh: 'ssh', path: 'path', 'ssh-port': 'ssh_port', url: 'url', sanitize: 'sanitize', database: 'database', 'db-user': 'db_user', 'db-password': 'db_password', 'db-host': 'db_host', 'db-port': 'db_port' };
+const FLAGS = { never: 'never', keep: 'keep', backup: 'backup', files: 'files', ssh: 'ssh', path: 'path', 'ssh-port': 'ssh_port', url: 'url', sanitize: 'sanitize', database: 'database', 'db-user': 'db_user', 'db-password': 'db_password', 'db-host': 'db_host', 'db-port': 'db_port' };
 
 function show(name, env) {
   console.log(`[${name}]`);

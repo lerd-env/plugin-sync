@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
-const { NEVER_PUSH, backupDir, backupNote, pruneBackups } = require('../lib/files');
+const { neverRules, backupDir, backupNote, pruneBackups } = require('../lib/files');
 const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, dumpCommand, passwordInput, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
@@ -66,7 +66,7 @@ function pullFiles(site, config) {
     fs.mkdirSync(path.join(site.path, dir), { recursive: true });
     // No --delete: a file only the local copy has is left alone.
     const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
-    const r = spawnSync('rsync', ['-az', '--protect-args', ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
+    const r = spawnSync('rsync', ['-az', '--protect-args', ...backup, ...neverRules(config).map((r) => `--exclude=${r}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     if (r.error) throw r.error;

@@ -230,6 +230,7 @@
           <label class="wide" id="url-row">Site address on this server, rewritten both ways in the database <input name="url" placeholder="https://shop.com"></label>
           <label>Folders for pull and push from the terminal <input name="files"></label>
           <label class="wide check"><input type="checkbox" name="backup"> Back up files before replacing them: on the server for a push, in lerd's data folder for a pull</label>
+          <label class="wide" title="On top of .env, .env.*, wp-config.php, .lerd/, .lerd.yaml and .git/, which are never synced">Never sync, besides config files and .lerd/ and .git/ <input name="never" placeholder="*.log, wp-content/cache/"></label>
           <label>Backups to keep, oldest deleted first <input name="keep" type="number" min="1" max="9999" placeholder="10"></label>
         </div>
       </fieldset>

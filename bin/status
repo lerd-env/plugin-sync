@@ -15,9 +15,11 @@ run(async () => {
   if (res.error) throw new Error(res.error);
   if (res.remote_error) throw new Error(`could not list ${env.name}: ${res.remote_error}`);
   const lines = [];
+  // What never syncs is no difference to report.
+  const locked = (dir, name) => [...(res.local[dir] || []), ...(res.remote[dir] || [])].some((e) => e.name === name && e.locked);
   for (const [dir, names] of Object.entries(res.status).sort()) {
     for (const [name, state] of Object.entries(names).sort()) {
-      if (LABEL[state]) lines.push(`${LABEL[state].padEnd(11)} ${dir ? `${dir}/${name}` : name}`);
+      if (LABEL[state] && !locked(dir, name)) lines.push(`${LABEL[state].padEnd(11)} ${dir ? `${dir}/${name}` : name}`);
     }
   }
   console.log(lines.length ? lines.join('\n') : `nothing differs under ${res.dir || 'the project'}`);

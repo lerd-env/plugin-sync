@@ -194,7 +194,6 @@ function renderCrumbs() {
   $('crumbs').replaceChildren(...nodes);
 }
 
-const NEVER_PUSH = ['.env', 'wp-config.php'];
 const BADGE = {
   local: { local: ['accent', 'only here'], changed: ['warn', 'differs'], same: ['faint', 'same'] },
   remote: { remote: ['accent', 'only here'], changed: ['warn', 'differs'], same: ['faint', 'same'] },
@@ -249,7 +248,7 @@ function row(side, parentDir, entry, depth) {
   const rel = parentDir ? `${parentDir}/${entry.name}` : entry.name;
   const isDir = entry.type === 'dir';
   const open = isDir && expanded.has(rel);
-  const locked = NEVER_PUSH.includes(entry.name);
+  const locked = !!entry.locked;
   const parent = pickedParent(side, rel);
   const title = parent ? `included with ${parent}/` : undefined;
   const box = el('input', { type: 'checkbox', 'aria-label': entry.name, disabled: locked || !!parent, title });
@@ -272,7 +271,7 @@ function row(side, parentDir, entry, depth) {
     },
     caret,
     // Each side keeps its own config, so it gets a lock that says why instead of a box.
-    locked ? el('span', { class: 'lock', title: `${entry.name} holds this side's own settings, like its database password, so it is never copied across` }, icon('lock')) : box,
+    locked ? el('span', { class: 'lock', title: `${entry.name} is never synced: each side keeps its own config, lerd setup and repository, plus what this environment's settings add` }, icon('lock')) : box,
     icon(isDir ? 'folder' : 'file'),
     el('span', { class: 'n', title: entry.name }, entry.name),
     badge ? badgeEl(badge, rel, entry, side) : el('span'),
@@ -333,7 +332,7 @@ function pane(side) {
   const body = (syncScroll ? merged(dir) : top || []).length || up
     ? el('div', { class: 'rows' }, up, ...rows(side, dir, 0))
     : el('div', { class: 'lerd-empty' }, el('span', { class: 'lerd-muted' }, side === 'local' ? 'This folder is empty or missing here' : 'This folder is empty or missing on the server'));
-  const pickable = (top || []).filter((e) => !NEVER_PUSH.includes(e.name)).map((e) => (dir ? `${dir}/${e.name}` : e.name));
+  const pickable = (top || []).filter((e) => !e.locked).map((e) => (dir ? `${dir}/${e.name}` : e.name));
   const inside = dir && pickedParent(side, dir + '/x');
   all.checked = !!inside || (pickable.length > 0 && pickable.every((p) => picked[side].has(p)));
   all.disabled = !!inside || !pickable.length;
@@ -732,6 +731,7 @@ function openSettings(name) {
   const env = name ? config.environments[name] : {};
   for (const input of form.querySelectorAll('input')) {
     if (input.name === 'backup') input.checked = env.backup !== false;
+    else if (input.name === 'never') input.value = (env.never || []).join(', ');
     else if (input.name === 'env') input.value = name || (Object.keys(config.environments).length ? '' : 'production');
     else if (input.name === 'files') input.value = (env.files || []).join(', ');
     else if (input.name === 'db_password') {
