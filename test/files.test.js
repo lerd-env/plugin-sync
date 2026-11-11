@@ -152,3 +152,18 @@ test('pruneLocal keeps the newest backup folders', () => {
   assert.deepEqual(fs.readdirSync(dir), ['20260301T000000']);
   pruneLocal(path.join(dir, 'missing'), 1);
 });
+
+const { backupDir } = require('../lib/files');
+
+test('local backups live in a folder only their owner can open', () => {
+  process.env.LERD_PLUGIN_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-bd-'));
+  const dir = backupDir('pull', { name: 'production' }, 'shop');
+  assert.equal(fs.statSync(path.dirname(dir)).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.dirname(path.dirname(dir))).mode & 0o777, 0o700);
+  assert.throws(() => backupDir('pull', {}, '../x'), /not a site name/);
+});
+
+test('transfers keep odd file names to themselves on the server', () => {
+  const args = transferArgs('pull', { ssh: 'a@b', path: '/srv' }, '/s', ['up/my photo.jpg']);
+  assert.ok(args.includes('--protect-args'), 'without it an older rsync hands the name to the server shell');
+});

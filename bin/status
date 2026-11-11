@@ -1,0 +1,25 @@
+#!/usr/bin/env node
+// lerd sync:status [site] [--env name] [--dir wp-content] [--all]
+// Lists what differs between this site and a server under one folder: files
+// only here, only there, or the same name with a different size.
+const { context, run } = require('../lib/cli');
+const { loadConfig, pickEnv } = require('../lib/remote');
+const ops = require('../lib/ops');
+
+const LABEL = { local: 'only here', remote: 'only there', changed: 'differs' };
+
+run(async () => {
+  const { opts, site } = context('lerd sync:status <site> --env name', ['all']);
+  const env = pickEnv(loadConfig(site), opts.env);
+  const res = await ops.listing(site, { env: env.name, dir: opts.dir || '', all: !!opts.all });
+  if (res.error) throw new Error(res.error);
+  if (res.remote_error) throw new Error(`could not list ${env.name}: ${res.remote_error}`);
+  const lines = [];
+  for (const [dir, names] of Object.entries(res.status).sort()) {
+    for (const [name, state] of Object.entries(names).sort()) {
+      if (LABEL[state]) lines.push(`${LABEL[state].padEnd(11)} ${dir ? `${dir}/${name}` : name}`);
+    }
+  }
+  console.log(lines.length ? lines.join('\n') : `nothing differs under ${res.dir || 'the project'}`);
+  if (!opts.all) console.log(`(one folder deep; --all looks through everything under ${res.dir || 'the project'})`);
+});

@@ -60,6 +60,31 @@ lerd sync:push --env staging --db        # replace the server's database too
 
 A push always names its environment. Folders are added and updated on the server, never deleted there, and a `.env` or `wp-config.php` inside them is never sent. A database push asks you to type the environment's name, or takes `--yes`. It works for MySQL and MariaDB: the dump is uploaded and checked, the server's database is backed up to `~/.lerd-sync/` on the server, then imported, and the backup goes back in if the import fails. With `--url` set, WordPress addresses are rewritten in the dump, serialized data included, without touching the local database. Assistants can pull but never push.
 
+## From the terminal
+
+Everything the tab does with files and backups has a command, run inside the project or with the site named:
+
+```bash
+lerd sync:status --dir wp-content --all                 # what is only here, only there, or differs
+lerd sync:diff wp-content/themes/shop/style.css          # unified diff, server against this site
+lerd sync:push --env staging --paths wp-content/themes/shop,robots.txt
+lerd sync:pull --paths wp-content/uploads/2026            # only these, backed up like any pull
+lerd sync:backups                                         # backups and snapshots, with their ids
+lerd sync:backups --files pull:20261111T111800
+lerd sync:backups --restore pull:20261111T111800          # asks first, or --yes
+lerd sync:backups --remove db:backup-shop-20261111T104210.sql
+```
+
+A server database restore asks for the environment's name typed back, or takes `--yes`.
+
+## AI assistants
+
+`sync_pull` pulls the database, the configured folders, or just the `paths` given. `sync_status` lists what differs and `sync_backups` lists what has been kept, both read only. Pushing, restoring and removing stay with you, in the terminal or the tab.
+
+## Older lerd
+
+The diff and the file viewer the badges open need lerd 1.39 or newer. On an older lerd the badges are plain labels and everything else works.
+
 ## Sanitize
 
 A sanitize file is plain SQL committed to the project, for example:

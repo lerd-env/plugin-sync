@@ -2,22 +2,31 @@ api_version: 1
 name: sync
 lerd: ">=1.37"
 version: 0.2.0
-description: Pull a site's database and uploaded files from its servers over SSH, or push them back, with an environment per server
+description: Sync a site's files and database with its servers over SSH, both ways, with an environment per server, a side-by-side file browser and backups of everything replaced
 docs: DOCS.md
 icon: icon.svg
 screenshots: [docs/tab.png]
 
-# lerd sync:setup | pull | push
+# lerd sync:setup | pull | push | status | diff | backups
 commands:
   - name: setup
     usage: "Save one of the site's servers, or list them with no options: setup [--env production] --ssh user@host --path /remote/project [--url https://example.com] [--files a,b] [--sanitize file.sql] [--database --db-user --db-password] | --env name --remove"
     run: bin/setup
   - name: pull
-    usage: "Pull the database and files from one of the site's servers: pull [site] [--env name] [--db-only | --files-only]"
+    usage: "Pull the database and files from one of the site's servers, or just some files: pull [site] [--env name] [--db-only | --files-only | --paths a,b]"
     run: bin/pull
   - name: push
-    usage: "Send the listed folders to a server, and with --db replace its database after a backup: push [site] --env name [--files] [--db] [--dry-run] [--yes]"
+    usage: "Send the listed folders, or just some files, to a server, and with --db replace its database after a backup: push [site] --env name [--files | --paths a,b] [--db] [--dry-run] [--yes]"
     run: bin/push
+  - name: status
+    usage: "List what is only here, only on the server, or differs: status [site] [--env name] [--dir wp-content] [--all]"
+    run: bin/status
+  - name: diff
+    usage: "Show how one file differs between the server and this site: diff <file> [--env name] [--site name]"
+    run: bin/diff
+  - name: backups
+    usage: "List the backups and snapshots, or show, restore or remove one: backups [site] [--env name] [--files id | --restore id | --remove id] [--yes]"
+    run: bin/backups
 
 site_commands:
   - name: pull
@@ -38,8 +47,31 @@ mcp:
           site: {type: string, description: lerd site name}
           what: {type: string, enum: [both, db, files], description: What to pull; both when omitted}
           env: {type: string, description: "Environment to pull from, like production or staging; needed only when the site has more than one"}
+          paths: {type: array, items: {type: string}, description: "Pull only these files or folders, relative to the project, instead of the database and the configured folders; what they replace is backed up"}
       run: bin/pull
       timeout: 10m
+    - name: status
+      description: List what differs between a lerd site and its server under one folder, files only on this site, only on the server, or the same name with a different size. Read only
+      input_schema:
+        type: object
+        required: [site]
+        properties:
+          site: {type: string, description: lerd site name}
+          env: {type: string, description: "Environment to compare with; needed only when the site has more than one"}
+          dir: {type: string, description: "Folder inside the project to look in; the project root when omitted"}
+          all: {type: boolean, description: "Look through everything under the folder, not just one level; refused past 5000 entries"}
+      run: bin/status
+      timeout: 2m
+    - name: backups
+      description: List what sync has kept for a lerd site, files a push or pull replaced on either side, the server's database backups and lerd's snapshots of the local database, each with the id to restore it by. Read only; restoring is for the user, from the terminal or the Sync tab
+      input_schema:
+        type: object
+        required: [site]
+        properties:
+          site: {type: string, description: lerd site name}
+          env: {type: string, description: "Environment whose server backups to list; needed only when the site has more than one"}
+      run: bin/backups
+      timeout: 2m
 
 requires: [ssh, rsync]
 
@@ -47,6 +79,7 @@ api:
   - path: state
     methods: [GET]
     run: bin/api
+    loopback_only: true
   - path: ls
     methods: [GET]
     run: bin/api

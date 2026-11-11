@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+// lerd sync:backups [site] [--env name]
+//   [--files <id> | --restore <id> | --remove <id>] [--yes]
+// Lists what transfers kept on both sides, the server's database backups and
+// lerd's snapshots of this site's database; shows, restores or removes one.
+const { context, confirm, run } = require('../lib/cli');
+const { loadConfig, pickEnv } = require('../lib/remote');
+const ops = require('../lib/ops');
+
+const when = (s) => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +s.slice(9, 11), +s.slice(11, 13), +s.slice(13, 15))).toLocaleString();
+const size = (n) => (n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
+
+function list(res, env) {
+  const kind = { push: `files replaced on ${env.name}`, pull: 'files replaced on this site', db: `${env.name} database` };
+  const out = res.items.map((b) => `${b.id}\n    ${when(b.stamp)}, ${kind[b.kind]}, ${b.kind === 'db' ? size(b.bytes) : `${b.files} file${b.files === 1 ? '' : 's'}, ${size(b.bytes)}`}`);
+  out.push(...res.snapshots.map((s) => `snap:${s.name}\n    ${s.created}, lerd snapshot of ${res.local_database}, ${s.size}`));
+  if (!out.length) out.push('nothing kept yet');
+  return [...out, ...res.errors].join('\n');
+}
+
+run(async () => {
+  const { opts, site, mcp } = context('lerd sync:backups <site> --env name', ['yes']);
+  const env = pickEnv(loadConfig(site), opts.env);
+  if (opts.files) {
+    const { files } = await ops.backupFiles(site, { env: env.name, id: opts.files });
+    return console.log(files.map((f) => `${size(f.size).padStart(9)}  ${f.path}`).join('\n') || 'empty');
+  }
+  const id = opts.restore || opts.remove;
+  if (!id) return console.log(list(await ops.backups(site, { env: env.name }), env));
+  // Changing a backup's side is for a person to ask for, never an assistant on its own.
+  if (mcp) throw new Error('restoring or removing a backup is done from the terminal or the Sync tab');
+  if (opts.remove) {
+    await confirm(opts, `Remove ${id} for good? [y/N]`);
+    const r = await ops.removeBackup(site, { env: env.name, id });
+    console.log(r.log);
+    if (!r.ok) process.exit(1);
+    return;
+  }
+  const body = { env: env.name, id };
+  if (id.startsWith('db:')) {
+    await confirm(opts, `This puts the ${env.name} database back to ${id}. Type ${env.name} to go on:`, env.name);
+    body.confirm = env.name;
+  } else {
+    await confirm(opts, `Restore ${id}? What it replaces is kept as a new backup. [y/N]`);
+  }
+  const r = await ops.restore(site, body);
+  console.log(r.log);
+  if (!r.ok) process.exit(1);
+});

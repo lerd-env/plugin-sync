@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+// lerd sync:diff <file> [--env name] [--site name]
+// Prints a unified diff of one file, the server's copy against this site's.
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const { parseArgs } = require('../lib/args');
+const { run } = require('../lib/cli');
+const { loadConfig, pickEnv } = require('../lib/remote');
+const ops = require('../lib/ops');
+
+run(async () => {
+  const opts = parseArgs(process.argv.slice(2));
+  const site = opts.site || process.env.LERD_SITE;
+  const file = opts._[0];
+  if (!site || !file) throw new Error('usage: lerd sync:diff <file> [--env name], inside a linked project or with --site');
+  const env = pickEnv(loadConfig(site), opts.env);
+  const res = await ops.fileVersions(site, { env: env.name, file });
+  if (res.error) throw new Error(res.error);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lerd-sync-diff-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'remote'), res.remote);
+    fs.writeFileSync(path.join(dir, 'local'), res.local);
+    const r = spawnSync('diff', ['-u', '--label', `${env.name}/${file}`, '--label', `this site/${file}`, path.join(dir, 'remote'), path.join(dir, 'local')], { encoding: 'utf8' });
+    process.stdout.write(r.stdout || `${file} is the same on both sides\n`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

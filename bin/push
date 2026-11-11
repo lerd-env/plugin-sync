@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lerd sync:push [site] --env production [--files] [--db] [--dry-run] [--yes]
+// lerd sync:push [site] --env production [--files | --paths a,b] [--db] [--dry-run] [--yes]
 // Sends the listed folders to the server, and with --db replaces the server's
 // database with the local one, after a backup kept on the server. With neither
 // --files nor --db only the folders go.
@@ -9,7 +9,7 @@ const readline = require('node:readline');
 const { spawnSync } = require('node:child_process');
 const { parseArgs } = require('../lib/args');
 const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
-const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
+const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, passwordInput, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
 
 const { NEVER_PUSH, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
 
@@ -33,7 +33,7 @@ async function pushDatabase(site, env) {
   if (engineOf(service) !== 'mysql') throw new Error('pushing a database works for MySQL and MariaDB sites only');
   const database = siteDatabase(site);
   const db = remoteDatabase(env);
-  const { pw, conn } = mysqlConn(db);
+  const { read, conn } = mysqlConn(db);
 
   const tmp = path.join(process.env.LERD_PLUGIN_DATA, 'tmp');
   fs.mkdirSync(tmp, { recursive: true });
@@ -55,7 +55,7 @@ async function pushDatabase(site, env) {
     }
     if (!fs.existsSync(file) || fs.statSync(file).size === 0) throw new Error('the local export is empty; nothing was pushed');
 
-    const version = ssh(env, `${pw}mysql ${conn} -N -e 'SELECT VERSION()'`).trim();
+    const version = ssh(env, `${read}mysql ${conn} -N -e 'SELECT VERSION()'`, undefined, passwordInput(db)).trim();
     if (/mariadb/i.test(version)) await rewriteFile(file, mysqlToMariadb);
 
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
@@ -66,7 +66,7 @@ async function pushDatabase(site, env) {
     const up = spawnSync('ssh', ['-C', ...sshArgs(env), env.ssh, `umask 077; mkdir -p ${dir} && cat > ${sh(upload)}`], { stdio: [fs.openSync(file, 'r'), 'inherit', 'inherit'] });
     if (up.status !== 0) throw new Error('the upload failed; the server was not changed');
     console.log(`backing up and importing into ${db.database}`);
-    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, backup, fs.statSync(file).size)], { stdio: ['ignore', 'inherit', 'inherit'] });
+    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, backup, fs.statSync(file).size)], { input: passwordInput(db) || '', stdio: ['pipe', 'inherit', 'inherit'] });
     if (r.status !== 0) throw new Error(`pushing the database to ${env.name} failed`);
     ssh(env, pruneCommand(dir, `backup-${db.database}-`, env.keep || KEEP_DEFAULT));
   } finally {
@@ -85,7 +85,7 @@ function pushFiles(site, env, dryRun) {
     console.log(`${dryRun ? 'would send' : 'sending'} ${dir}/`);
     // No --delete: a file only the server has, such as a fresh upload, is left alone.
     const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
-    const args = ['-az', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
+    const args = ['-az', '--protect-args', ...(dryRun ? ['-n', '--itemize-changes'] : []), ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(env)].join(' '), '--', path.join(site.path, dir) + '/', `${env.ssh}:${env.path}/${dir}/`];
     const r = spawnSync('rsync', args, { stdio: ['ignore', 'inherit', 'inherit'] });
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(`rsync of ${dir} failed`);
@@ -95,11 +95,21 @@ function pushFiles(site, env, dryRun) {
   pruneBackups('push', env, keep);
 }
 
+// Just the named files and folders, the way the Sync tab pushes a selection.
+async function pushPaths(name, env, opts) {
+  if (opts.db || opts['dry-run']) throw new Error('--paths sends files only; leave out --db and --dry-run');
+  const paths = String(opts.paths).split(',').map((p) => p.trim()).filter(Boolean);
+  const r = await require('../lib/ops').transfer(name, { direction: 'push', env: env.name, paths });
+  console.log(r.log);
+  if (!r.ok) process.exit(1);
+}
+
 (async () => {
   const opts = parseArgs(process.argv.slice(2), ['files', 'db', 'dry-run', 'yes']);
   const name = opts._[0] || process.env.LERD_SITE;
   if (!name) throw new Error('usage: lerd sync:push [site] --env name [--files] [--db], or run it inside a linked project');
   const env = pickEnv(loadConfig(name), opts.env, { required: true });
+  if (opts.paths) return pushPaths(name, env, opts);
   const site = await findSite(name);
   const files = opts.files || !opts.db;
   if (opts.db && opts['dry-run']) throw new Error('--dry-run previews files only; leave out --db');

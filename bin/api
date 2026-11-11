@@ -1,241 +1,12 @@
 #!/usr/bin/env node
-// The site tab's endpoints. GET state answers the site's environments without
-// the database password. POST env saves or removes one; POST run pulls, pushes
-// or tests a connection by running the same commands the terminal does.
+// The Sync tab's endpoints. GET answers the environments, a listing, a count,
+// a file or the backups; POST saves an environment or runs an action.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { loadConfig, saveConfig, applyEnv, publicConfig, pickEnv, ssh, sh, sshArgs, remoteDatabase, pushScript, engineOf } = require('../lib/remote');
-const { site: findSite, siteDatabase, siteUrl, isWordPress, lerd } = require('../lib/lerd');
-const { removeRemoteCommand, backupRef, listLocalBackups, listRemoteBackupsCommand, parseRemoteBackups, backupFilesCommand, restoreFilesCommand, parseSnapshots } = require('../lib/backups');
-const { backupDir, backupNote, pruneBackups, cleanDir, listLocalTree, listRemoteTree, compare, transferArgs, countCommand, asText, readLocal, readRemoteCommand } = require('../lib/files');
-
-async function sitePath(name) {
-  return process.env.LERD_SITE_PATH || (await findSite(name)).path;
-}
-
-// A folder of the project on both sides, one level or everything under it,
-// keyed by folder, with how each name compares. Too much to expand is an
-// answer for the page to show, not the plugin failing.
-async function listing(site, q) {
-  const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
-  const dir = cleanDir(q.get('dir'));
-  const all = q.get('all') === '1';
-  let local;
-  try {
-    local = listLocalTree(await sitePath(site), dir, { all });
-  } catch (e) {
-    if (/holds more than/.test(e.message)) return { dir, error: e.message };
-    throw e;
-  }
-  let remote = {};
-  let remoteError = '';
-  try {
-    remote = listRemoteTree(env, dir, { all });
-  } catch (e) {
-    if (all && /holds more than/.test(e.message)) return { dir, error: e.message };
-    remoteError = e.message;
-  }
-  const status = {};
-  if (!remoteError) for (const d of new Set([...Object.keys(local), ...Object.keys(remote)])) status[d] = compare(local[d] || [], remote[d] || []);
-  return { dir, local, remote, status, remote_error: remoteError };
-}
-
-// What the tab shows about this side, and whether it is WordPress, which
-// decides if the site address setting is offered at all.
-async function localInfo(name) {
-  try {
-    const s = await findSite(name);
-    let database = '';
-    try {
-      database = siteDatabase(s);
-    } catch {}
-    return { path: s.path.replace(require('node:os').homedir(), '~'), url: siteUrl(s), database, framework: s.framework || '', wordpress: isWordPress(s) };
-  } catch {
-    return {};
-  }
-}
-
-// How many files the picked paths hold on one side, folders counted through.
-async function count(site, q) {
-  const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
-  const cmd = countCommand(JSON.parse(q.get('paths') || '[]'));
-  const out = q.get('side') === 'remote'
-    ? ssh(env, `cd ${sh(env.path)} && ${cmd}`)
-    : spawnSync('sh', ['-c', cmd], { cwd: await sitePath(site), encoding: 'utf8' }).stdout;
-  return { files: Number(String(out).trim()) || 0 };
-}
-
-const localBackups = (site) => path.join(process.env.LERD_PLUGIN_DATA, 'backups', site);
-
-function remoteHome(env) {
-  const home = ssh(env, 'printf %s "$HOME"').trim();
-  if (!home.startsWith('/')) throw new Error('could not find the home folder on the server');
-  return home;
-}
-
-// The local database lerd serves this site from, for its snapshots.
-async function localDb(site) {
-  const s = await findSite(site);
-  const service = (s.services || []).find((x) => engineOf(x));
-  if (!service) return null;
-  return { site: s, service, database: siteDatabase(s) };
-}
-
-// Everything kept for this site: file backups on both sides, the server's
-// database backups and lerd's snapshots of the local database. A side that
-// cannot be read says so instead of failing the rest.
-async function backups(site, q) {
-  const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
-  const out = { items: listLocalBackups(localBackups(site)), snapshots: [], errors: [] };
-  try {
-    let database = '';
-    try {
-      database = remoteDatabase(env).database;
-    } catch {}
-    out.items.push(...parseRemoteBackups(ssh(env, listRemoteBackupsCommand(site, database))));
-  } catch (e) {
-    out.errors.push(`server: ${e.message}`);
-  }
-  out.items.sort((a, b) => b.stamp.localeCompare(a.stamp));
-  try {
-    const db = await localDb(site);
-    if (db) {
-      const r = spawnSync(process.env.LERD_BIN, ['db:snapshots', '-d', db.database, '-s', db.service], { cwd: db.site.path, encoding: 'utf8' });
-      out.snapshots = parseSnapshots(r.stdout || '');
-      out.local_database = db.database;
-    }
-  } catch (e) {
-    out.errors.push(`snapshots: ${e.message}`);
-  }
-  return out;
-}
-
-// The files one push or pull backup holds.
-async function backupFiles(site, q) {
-  const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
-  const ref = backupRef(site, q.get('id'));
-  if (ref.kind !== 'push' && ref.kind !== 'pull') throw new Error('only file backups have files to list');
-  const dir = ref.kind === 'pull' ? path.join(localBackups(site), ref.name) : `${remoteHome(env)}/.lerd-sync/files/${ref.name}`;
-  const out = ref.kind === 'pull' ? spawnSync('sh', ['-c', backupFilesCommand(dir)], { encoding: 'utf8' }).stdout : ssh(env, backupFilesCommand(dir));
-  const files = out.split('\n').filter(Boolean).map((l) => {
-    const [size, ...p] = l.split('\t');
-    return { path: p.join('\t'), size: Number(size) };
-  });
-  return { files: files.sort((a, b) => a.path.localeCompare(b.path)) };
-}
-
-// Puts a backup back where it came from. Files replaced by the restore are
-// kept like any transfer's; a database is backed up again before its import.
-async function restore(site, body) {
-  const env = pickEnv(loadConfig(site), body.env, { required: true });
-  const ref = backupRef(site, body.id);
-  if (ref.kind === 'pull') {
-    const keep = backupDir('pull', env, site);
-    const r = spawnSync('sh', ['-c', restoreFilesCommand(path.join(localBackups(site), ref.name), await sitePath(site), keep)], { encoding: 'utf8' });
-    if (r.status !== 0) return { ok: false, log: r.stderr || 'restore failed' };
-    const note = backupNote('pull', env, keep);
-    pruneBackups('pull', env, keep);
-    return { ok: true, log: [`restored the files kept on ${ref.stamp} into this site`, note].filter(Boolean).join('\n') };
-  }
-  if (ref.kind === 'push') {
-    const keep = backupDir('push', env, site);
-    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, restoreFilesCommand(`${remoteHome(env)}/.lerd-sync/files/${ref.name}`, env.path, keep)], { encoding: 'utf8' });
-    if (r.status !== 0) return { ok: false, log: r.stderr || 'restore failed' };
-    const note = backupNote('push', env, keep);
-    pruneBackups('push', env, keep);
-    return { ok: true, log: [`restored the files kept on ${ref.stamp} on ${env.name}`, note].filter(Boolean).join('\n') };
-  }
-  if (ref.kind === 'db') {
-    if (body.confirm !== env.name) throw new Error('restoring a server database needs the environment name confirmed');
-    const db = remoteDatabase(env);
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
-    const upload = `.lerd-sync/push-${stamp}.sql`;
-    const size = ssh(env, `cp -- ${sh('.lerd-sync/' + ref.name)} ${sh(upload)} && wc -c < ${sh(upload)}`).trim();
-    const r = spawnSync('ssh', [...sshArgs(env), env.ssh, pushScript(db, upload, `.lerd-sync/backup-${db.database}-${stamp}.sql`, size)], { encoding: 'utf8' });
-    return { ok: r.status === 0, log: `${r.stdout || ''}${r.stderr || ''}`.trim() || (r.status === 0 ? 'restored' : 'restore failed') };
-  }
-  const db = await localDb(site);
-  if (!db) throw new Error(`${site} has no database in lerd`);
-  const r = spawnSync(process.env.LERD_BIN, ['db:restore', ref.name, '-d', db.database, '-s', db.service, '--force'], { cwd: db.site.path, encoding: 'utf8' });
-  return { ok: r.status === 0, log: `${r.stdout || ''}${r.stderr || ''}`.trim() };
-}
-
-// Deletes one backup or snapshot for good; the page asked first.
-async function removeBackup(site, body) {
-  const env = pickEnv(loadConfig(site), body.env, { required: true });
-  const ref = backupRef(site, body.id);
-  if (ref.kind === 'pull') {
-    fs.rmSync(path.join(localBackups(site), ref.name), { recursive: true, force: true });
-    return { ok: true, log: `removed the backup kept on this site on ${ref.stamp}` };
-  }
-  if (ref.kind === 'snap') {
-    const db = await localDb(site);
-    if (!db) throw new Error(`${site} has no database in lerd`);
-    const r = spawnSync(process.env.LERD_BIN, ['db:snapshot:rm', ref.name, '-d', db.database, '-s', db.service], { cwd: db.site.path, encoding: 'utf8' });
-    return { ok: r.status === 0, log: `${r.stdout || ''}${r.stderr || ''}`.trim() };
-  }
-  ssh(env, removeRemoteCommand(ref));
-  return { ok: true, log: `removed the ${ref.kind === 'db' ? 'database backup' : 'file backup'} kept on ${env.name} on ${ref.stamp}` };
-}
-
-// One file as text from one side, or null when it is binary or too large.
-async function readSide(site, env, rel, side) {
-  if (side === 'local') return asText(readLocal(await sitePath(site), rel));
-  const r = spawnSync('ssh', [...sshArgs(env), env.ssh, readRemoteCommand(env.path, rel)], { maxBuffer: 3 << 20 });
-  if (r.status !== 0) throw new Error(String(r.stderr).trim() || 'could not read it on the server');
-  return asText(r.stdout);
-}
-
-async function readBackupFile(site, env, ref, rel) {
-  if (ref.kind === 'pull') {
-    const text = asText(readLocal(path.join(localBackups(site), ref.name), rel));
-    if (text === null) throw new Error('not text, or over 2 MB, so it cannot be shown');
-    return text;
-  }
-  if (ref.kind !== 'push') throw new Error('only file backups hold files');
-  const r = spawnSync('ssh', [...sshArgs(env), env.ssh, readRemoteCommand(`${remoteHome(env)}/.lerd-sync/files/${ref.name}`, rel)], { maxBuffer: 3 << 20 });
-  if (r.status !== 0) throw new Error(String(r.stderr).trim() || 'could not read it on the server');
-  const text = asText(r.stdout);
-  if (text === null) throw new Error('not text, or over 2 MB, so it cannot be shown');
-  return text;
-}
-
-// Both versions of one file for lerd's diff, or with side just that one for
-// lerd's viewer, or why neither can be shown.
-async function fileVersions(site, q) {
-  const env = pickEnv(loadConfig(site), q.get('env'), { required: true });
-  const rel = cleanDir(q.get('file'));
-  if (q.get('backup')) {
-    try {
-      return { backup: await readBackupFile(site, env, backupRef(site, q.get('backup')), rel) };
-    } catch (e) {
-      return { error: e.message };
-    }
-  }
-  const sides = q.get('side') ? [q.get('side')] : ['local', 'remote'];
-  const out = {};
-  try {
-    for (const side of sides) out[side] = await readSide(site, env, rel, side);
-  } catch (e) {
-    return { error: e.message };
-  }
-  if (Object.values(out).includes(null)) return { error: 'not text, or over 2 MB, so it cannot be shown' };
-  return out;
-}
-
-async function transfer(site, body) {
-  const env = pickEnv(loadConfig(site), body.env, { required: true });
-  const cwd = await sitePath(site);
-  const keep = backupDir(body.direction, env, site);
-  const r = spawnSync('rsync', transferArgs(body.direction, env, cwd, body.paths, keep), { cwd, encoding: 'utf8', maxBuffer: 16 << 20 });
-  const log = `${r.stdout || ''}${r.stderr || ''}`.trim();
-  const verb = body.direction === 'push' ? `pushed to ${env.name}` : `pulled from ${env.name}`;
-  if (r.status !== 0) return { ok: false, log: log || `rsync exited ${r.status}` };
-  const note = backupNote(body.direction, env, keep);
-  pruneBackups(body.direction, env, keep);
-  return { ok: true, log: [log || 'nothing to copy, both sides already match', note, verb].filter(Boolean).join('\n') };
-}
+const { loadConfig, saveConfig, applyEnv, publicConfig, pickEnv } = require('../lib/remote');
+const { site: findSite, isWordPress } = require('../lib/lerd');
+const ops = require('../lib/ops');
 
 // Runs bin/pull or bin/push and hands back what it printed, so the tab shows
 // the same lines a terminal would, failure included.
@@ -244,25 +15,12 @@ function runCommand(cmd, args) {
   return { ok: r.status === 0, log: `${r.stdout || ''}${r.stderr || ''}`.trim() };
 }
 
-function testConnection(env) {
-  const lines = [];
-  try {
-    ssh(env, `cd ${sh(env.path)}`);
-    lines.push(`connected to ${env.ssh}, ${env.path} exists`);
-    const db = remoteDatabase(env);
-    lines.push(`database ${db.database} as ${db.db_user || 'root'}@${db.db_host || '127.0.0.1'}`);
-    return { ok: true, database: db.database, log: lines.join('\n') };
-  } catch (e) {
-    return { ok: false, log: [...lines, e.message].join('\n') };
-  }
-}
-
 async function run(site, body) {
-  if (body.action === 'transfer') return transfer(site, body);
-  if (body.action === 'restore') return restore(site, body);
-  if (body.action === 'remove-backup') return removeBackup(site, body);
+  if (body.action === 'transfer') return ops.transfer(site, body);
+  if (body.action === 'restore') return ops.restore(site, body);
+  if (body.action === 'remove-backup') return ops.removeBackup(site, body);
   const env = pickEnv(loadConfig(site), body.env, { required: true });
-  if (body.action === 'test') return testConnection(env);
+  if (body.action === 'test') return ops.testConnection(env);
   if (body.action === 'pull') {
     const only = { db: ['--db-only'], files: ['--files-only'] }[body.what] || [];
     return runCommand('pull', [site, '--env', env.name, ...only]);
@@ -280,13 +38,15 @@ async function run(site, body) {
 
 (async () => {
   const q = new URLSearchParams(process.env.LERD_QUERY || '');
-  const site = process.env.LERD_SITE || q.get('site');
-  if (!site) throw new Error('site is required');
+  // Only a site lerd itself found; an unknown name in the query is never used.
+  const site = process.env.LERD_SITE;
+  if (!site) throw new Error('site is required and must be a lerd site');
+  const opts = { env: q.get('env'), dir: q.get('dir'), all: q.get('all') === '1', side: q.get('side'), file: q.get('file'), backup: q.get('backup'), id: q.get('id'), paths: JSON.parse(q.get('paths') || '[]') };
   if (process.env.LERD_METHOD !== 'POST') {
-    if (q.get('backups')) return console.log(JSON.stringify(q.get('id') ? await backupFiles(site, q) : await backups(site, q)));
-    if (q.get('count')) return console.log(JSON.stringify(await count(site, q)));
-    if (q.get('file')) return console.log(JSON.stringify(await fileVersions(site, q)));
-    console.log(JSON.stringify(q.get('dir') !== null ? await listing(site, q) : { ...publicConfig(loadConfig(site)), local: await localInfo(site) }));
+    if (q.get('backups')) return console.log(JSON.stringify(q.get('id') ? await ops.backupFiles(site, opts) : await ops.backups(site, opts)));
+    if (q.get('count')) return console.log(JSON.stringify(await ops.count(site, opts)));
+    if (q.get('file')) return console.log(JSON.stringify(await ops.fileVersions(site, opts)));
+    console.log(JSON.stringify(q.get('dir') !== null ? await ops.listing(site, opts) : { ...publicConfig(loadConfig(site)), local: await ops.localInfo(site) }));
     return;
   }
   const body = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');

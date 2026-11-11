@@ -215,7 +215,7 @@
         <div class="grid2">
           <label class="wide" id="url-row">Site address on this server, rewritten both ways in the database <input name="url" placeholder="https://shop.com"></label>
           <label>Folders for pull and push from the terminal <input name="files"></label>
-          <label>Sanitize SQL after a pull <input name="sanitize" placeholder=".lerd/sanitize.sql"></label>
+          <label title="SQL in the project, run on this site's database after every pull, to replace customers' emails, names and the like. A failing statement fails the pull.">Scrub personal data after a pull (SQL file) <input name="sanitize" placeholder=".lerd/sanitize.sql"></label>
           <label class="wide check"><input type="checkbox" name="backup"> Back up files before replacing them: on the server for a push, in lerd's data folder for a pull</label>
           <label>Backups to keep, oldest deleted first <input name="keep" type="number" min="1" max="9999" placeholder="10"></label>
         </div>

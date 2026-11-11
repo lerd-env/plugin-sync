@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lerd sync:pull [site] [--env production] [--db-only | --files-only]
+// lerd sync:pull [site] [--env production] [--db-only | --files-only | --paths a,b]
 // Replaces the site's lerd database with a fresh dump from its server, after a
 // snapshot, points its URLs at the local site, runs the project's sanitize SQL
 // over it, and syncs the listed folders.
@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
 const { NEVER_PUSH, backupDir, backupNote, pruneBackups } = require('../lib/files');
 const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
-const { loadConfig, pickEnv, engineOf, dumpCommand, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
+const { loadConfig, pickEnv, engineOf, dumpCommand, passwordInput, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
 async function pullDatabase(site, config) {
   const service = (site.services || []).find((s) => engineOf(s));
@@ -25,7 +25,7 @@ async function pullDatabase(site, config) {
   try {
     const fd = fs.openSync(file, 'w', 0o600);
     try {
-      ssh(config, dumpCommand(engine, db), fd);
+      ssh(config, dumpCommand(engine, db), fd, passwordInput(db));
     } finally {
       fs.closeSync(fd);
     }
@@ -66,7 +66,7 @@ function pullFiles(site, config) {
     fs.mkdirSync(path.join(site.path, dir), { recursive: true });
     // No --delete: a file only the local copy has is left alone.
     const backup = keep ? ['--backup', `--backup-dir=${keep}/${dir}`] : [];
-    const r = spawnSync('rsync', ['-az', ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
+    const r = spawnSync('rsync', ['-az', '--protect-args', ...backup, ...NEVER_PUSH.map((f) => `--exclude=${f}`), '-e', ['ssh', ...sshArgs(config)].join(' '), `${config.ssh}:${config.path}/${dir}/`, path.join(site.path, dir) + '/'], {
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     if (r.error) throw r.error;
@@ -77,12 +77,21 @@ function pullFiles(site, config) {
   pruneBackups('pull', config, keep);
 }
 
+// Just the named files and folders, the way the Sync tab pulls a selection.
+async function pullPaths(name, config, paths) {
+  const list = Array.isArray(paths) ? paths : String(paths).split(',').map((p) => p.trim()).filter(Boolean);
+  const r = await require('../lib/ops').transfer(name, { direction: 'pull', env: config.name, paths: list });
+  console.log(r.log);
+  if (!r.ok) process.exit(1);
+}
+
 (async () => {
   const input = mcpInput();
-  const opts = input ? { _: [input.site], env: input.env, 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
+  const opts = input ? { _: [input.site], env: input.env, paths: input.paths, 'db-only': input.what === 'db', 'files-only': input.what === 'files' } : parseArgs(process.argv.slice(2), ['db-only', 'files-only']);
   const name = opts._[0] || process.env.LERD_SITE;
   if (!name) throw new Error('usage: lerd sync:pull [site] [--env name] [--db-only | --files-only], or run it inside a linked project');
   const config = pickEnv(loadConfig(name), opts.env);
+  if (opts.paths) return pullPaths(name, config, opts.paths);
   const site = await findSite(name);
   if (!opts['files-only']) await pullDatabase(site, config);
   if (!opts['db-only']) pullFiles(site, config);

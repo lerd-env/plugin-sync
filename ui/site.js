@@ -216,6 +216,8 @@ function pick(side, rel, on) {
 // the right; "only here" and the faint "same" open that side's copy in lerd's viewer.
 function badgeEl([kind, text], rel, entry, side) {
   if (entry.type === 'dir') return el('span', { class: 'lerd-pill ' + kind }, text);
+  // lerd before 1.39 ignores lerd.diff and lerd.view, so there is nothing to click.
+  if (!config.local?.viewer) return el('span', { class: 'lerd-pill ' + kind, title: 'Showing files needs lerd 1.39 or newer' }, text);
   const show = text === 'differs' ? () => showDiff(rel) : () => showOne(rel, side, text === 'same');
   return el('button', { class: 'lerd-pill ' + kind + ' pill-btn', title: text === 'differs' ? 'Show the difference' : 'Show the file', onclick: (e) => (e.stopPropagation(), show()) }, text);
 }
@@ -486,7 +488,7 @@ function backupRow({ icon: ic, title, meta, actions, id }) {
   const files = openBackup.get(id);
   const list = files === null
     ? el('div', { class: 'bk-file' }, el('span', { class: 'lerd-muted' }, 'Loading…'))
-    : files.map((f) => el('div', { class: 'bk-file' }, el('span', { class: 'p lerd-mono', title: f.path }, f.path), el('span', { class: 'num' }, size(f.size)), el('button', { class: 'lerd-pill pill-btn', onclick: () => viewKept(id, f.path) }, 'view')));
+    : files.map((f) => el('div', { class: 'bk-file' }, el('span', { class: 'p lerd-mono', title: f.path }, f.path), el('span', { class: 'num' }, size(f.size)), (config.local?.viewer ? el('button', { class: 'lerd-pill pill-btn', onclick: () => viewKept(id, f.path) }, 'view') : el('span'))));
   return [rowEl, el('div', { class: 'bk-files' }, ...[].concat(list))];
 }
 

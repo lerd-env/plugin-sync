@@ -21,11 +21,17 @@ test('sh quotes anything the remote shell would otherwise read', () => {
   assert.equal(execFileSync('sh', ['-c', `printf %s ${sh(nasty)}`]).toString(), nasty);
 });
 
-test('dumpCommand passes the password in the environment, not argv', () => {
-  const cmd = dumpCommand('mysql', { database: 'shop', db_user: 'forge', db_password: 'pw' });
-  assert.match(cmd, /MYSQL_PWD='pw' "\$bin" -h '127.0.0.1' -P '3306' -u 'forge' --single-transaction/);
-  assert.match(cmd, /'shop'$/);
-  assert.match(dumpCommand('postgres', { database: 'shop' }), /^pg_dump -h '127.0.0.1' -p '5432' -U 'postgres' .* -d 'shop'$/);
+// The command line of a process is readable by every user on a shared host,
+// so the password reaches the server on ssh's stdin, never in the command.
+test('dumpCommand reads the password from stdin, never from its own text', () => {
+  const cmd = dumpCommand('mysql', { database: 'shop', db_user: 'forge', db_password: 's3cr3t' });
+  assert.ok(!cmd.includes('s3cr3t'));
+  assert.match(cmd, /^IFS= read -r MYSQL_PWD; export MYSQL_PWD; /);
+  assert.match(cmd, /"\$bin" -h '127.0.0.1' -P '3306' -u 'forge' --single-transaction .* 'shop'$/);
+  const pg = dumpCommand('postgres', { database: 'shop', db_password: 's3cr3t' });
+  assert.ok(!pg.includes('s3cr3t'));
+  assert.match(pg, /^IFS= read -r PGPASSWORD; export PGPASSWORD; pg_dump -h '127.0.0.1' -p '5432' -U 'postgres' .* -d 'shop'$/);
+  assert.match(dumpCommand('postgres', { database: 'shop' }), /^pg_dump /, 'no password, nothing to read');
 });
 
 test('checkRelative keeps synced folders inside the project', () => {
@@ -86,15 +92,16 @@ function runPush(sql, { size } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-push-'));
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'mysqldump'), '#!/bin/sh\necho "-- backup of $*"\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'mysql'), `#!/bin/sh\ninput=$(cat)\nprintf '%s\\n---\\n' "$input" >> "${dir}/fed"\ncase "$input" in *BAD*) exit 1;; esac\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'mysqldump'), `#!/bin/sh\necho "-- backup of $*"\necho "$MYSQL_PWD" >> "${dir}/pwd"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'mysql'), `#!/bin/sh\necho "$MYSQL_PWD" >> "${dir}/pwd"\ninput=$(cat)\nprintf '%s\\n---\\n' "$input" >> "${dir}/fed"\ncase "$input" in *BAD*) exit 1;; esac\n`, { mode: 0o755 });
   const upload = path.join(dir, 'push.sql');
   fs.writeFileSync(upload, sql);
-  const script = pushScript({ database: 'shop', db_user: 'forge', db_password: 'pw' }, upload, path.join(dir, 'backup.sql'), size ?? Buffer.byteLength(sql));
-  const r = require('node:child_process').spawnSync('sh', ['-c', `umask 022; ${script}`], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  const script = pushScript({ database: 'shop', db_user: 'forge', db_password: 's3cr3t' }, upload, path.join(dir, 'backup.sql'), size ?? Buffer.byteLength(sql));
+  assert.ok(!script.includes('s3cr3t'), 'the password must not be in the server command');
+  const r = require('node:child_process').spawnSync('sh', ['-c', `umask 022; ${script}`], { input: 's3cr3t\n', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
   const read = (f) => (fs.existsSync(path.join(dir, f)) ? fs.readFileSync(path.join(dir, f), 'utf8') : '');
   const backupMode = fs.existsSync(path.join(dir, 'backup.sql')) ? fs.statSync(path.join(dir, 'backup.sql')).mode & 0o777 : null;
-  return { status: r.status, stderr: String(r.stderr), fed: read('fed'), backup: read('backup.sql'), backupMode, uploadLeft: fs.existsSync(upload) };
+  return { status: r.status, stderr: String(r.stderr), fed: read('fed'), pwd: read('pwd'), backup: read('backup.sql'), backupMode, uploadLeft: fs.existsSync(upload) };
 }
 
 test('pushScript backs up, then imports with a session header, and removes the upload', () => {
@@ -104,6 +111,7 @@ test('pushScript backs up, then imports with a session header, and removes the u
   assert.match(r.fed, /SET SESSION sql_mode='NO_AUTO_VALUE_ON_ZERO'[\s\S]*CREATE TABLE t/);
   assert.equal(r.uploadLeft, false);
   assert.equal(r.backupMode, 0o600, 'the backup holds the whole database, so only its owner reads it');
+  assert.deepEqual([...new Set(r.pwd.trim().split('\n'))], ['s3cr3t'], 'mysqldump and mysql still get the password');
 });
 
 test('pushScript restores the backup when the import fails', () => {
@@ -168,4 +176,25 @@ test('applyEnv takes how many backups to keep, 10 when unset', () => {
   applyEnv(config, 'prod', { keep: '' });
   assert.equal(config.environments.prod.keep, undefined);
   for (const bad of ['0', '-3', 'many', '1.5']) assert.throws(() => applyEnv(config, 'prod', { keep: bad }), /whole number/);
+});
+
+const { viewerSupported } = require('../lib/lerd');
+
+test('viewerSupported knows which lerd has lerd.diff and lerd.view', () => {
+  const yes = ['1.39.0', '1.39.0-beta.3', '1.39.1', '1.40.0', '2.0.0', 'lerd version 1.39.0 (commit abc)', '1.39.0-beta.2-8-g72849ec2', '1.39.0-beta.2-dirty'];
+  const no = ['1.38.4', '1.39.0-beta.2', '1.39.0-beta.1', 'lerd version 1.37.0 (commit abc)', 'nonsense', ''];
+  for (const v of yes) assert.equal(viewerSupported(v), true, v);
+  for (const v of no) assert.equal(viewerSupported(v), false, v);
+});
+
+const { loadConfig, saveConfig } = require('../lib/remote');
+
+test('a site name can never lead a config file out of the data folder', () => {
+  process.env.LERD_PLUGIN_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-data-'));
+  saveConfig('shop-2.test', { environments: {} });
+  assert.deepEqual(loadConfig('shop-2.test'), { environments: {} });
+  for (const bad of ['../../etc/x', '..', '.hidden', 'a/b', '', 'shop\\x']) {
+    assert.throws(() => loadConfig(bad), /not a site name/, bad);
+    assert.throws(() => saveConfig(bad, { environments: {} }), /not a site name/, bad);
+  }
 });
