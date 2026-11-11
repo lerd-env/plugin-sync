@@ -17,7 +17,7 @@ function runCommand(cmd, args) {
 
 async function run(site, body) {
   if (body.action === 'transfer') return ops.transfer(site, body);
-  if (['scrub-on', 'scrub-off', 'scrub-save'].includes(body.action)) return ops.scrub(site, body);
+  if (['scrub-on', 'scrub-off', 'scrub-save', 'scrub-file'].includes(body.action)) return ops.scrub(site, body);
   if (body.action === 'restore') return ops.restore(site, body);
   if (body.action === 'remove-backup') return ops.removeBackup(site, body);
   const env = pickEnv(loadConfig(site), body.env, { required: true });

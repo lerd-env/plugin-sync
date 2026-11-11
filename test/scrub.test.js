@@ -53,12 +53,39 @@ test('turning scrubbing on writes the default once and never over an edited file
   assert.equal(env.sanitize, undefined);
   scrubOn(env, dir, 'wordpress');
   assert.equal(fs.readFileSync(path.join(dir, '.lerd/scrub.sql'), 'utf8'), 'DELETE FROM shop_sessions;\n', 'an edited file survives off and on');
-  assert.deepEqual(scrubInfo(env, dir), { enabled: true, path: '.lerd/scrub.sql', exists: true, content: 'DELETE FROM shop_sessions;\n' });
+  assert.deepEqual(scrubInfo(env, dir), { enabled: true, path: '.lerd/scrub.sql', exists: true, content: 'DELETE FROM shop_sessions;\n', own: false });
 });
 
 test('scrubSave keeps the file inside the project and refuses huge text', () => {
   const dir = project({});
   assert.throws(() => scrubSave({ sanitize: '../outside.sql' }, dir, 'x'), /inside the project/);
   assert.throws(() => scrubSave({}, dir, 'x'.repeat(1024 * 1024 + 1)), /too large/);
-  assert.deepEqual(scrubInfo({}, dir), { enabled: false, path: '.lerd/scrub.sql', exists: false, content: '' });
+  assert.deepEqual(scrubInfo({}, dir), { enabled: false, path: '.lerd/scrub.sql', exists: false, content: '', own: false });
+});
+
+const { scrubUseFile } = require('../lib/scrub');
+
+test('an environment can switch to its own scrub file, which starts as a copy of the shared one', () => {
+  const dir = project({ 'wp-config.php': "$table_prefix = 'shop_';" });
+  const staging = { name: 'staging' };
+  scrubOn(staging, dir, 'wordpress');
+  scrubSave(staging, dir, 'SHARED;\n');
+  scrubUseFile(staging, dir, 'wordpress', 'own');
+  assert.equal(staging.sanitize, '.lerd/scrub-staging.sql');
+  assert.equal(fs.readFileSync(path.join(dir, '.lerd/scrub-staging.sql'), 'utf8'), 'SHARED;\n');
+  scrubSave(staging, dir, 'STAGING ONLY;\n');
+  scrubUseFile(staging, dir, 'wordpress', 'shared');
+  assert.equal(staging.sanitize, '.lerd/scrub.sql');
+  assert.equal(fs.readFileSync(path.join(dir, '.lerd/scrub.sql'), 'utf8'), 'SHARED;\n', 'the shared file is untouched');
+  scrubUseFile(staging, dir, 'wordpress', 'own');
+  assert.equal(fs.readFileSync(path.join(dir, '.lerd/scrub-staging.sql'), 'utf8'), 'STAGING ONLY;\n', 'its own file is kept, never recopied');
+  assert.equal(scrubInfo(staging, dir).own, true);
+  assert.throws(() => scrubUseFile(staging, dir, 'wordpress', 'mine'), /shared or own/);
+});
+
+test('with no shared file yet, an own file starts from the framework default', () => {
+  const dir = project({});
+  const prod = { name: 'production' };
+  scrubUseFile(prod, dir, 'laravel', 'own');
+  assert.match(fs.readFileSync(path.join(dir, '.lerd/scrub-production.sql'), 'utf8'), /^-- Scrubs/);
 });

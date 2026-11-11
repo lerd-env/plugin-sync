@@ -621,8 +621,13 @@ async function loadScrub() {
 function renderScrub() {
   const on = !!scrubState?.enabled;
   $('scrub-on').checked = on;
-  $('scrub-path').textContent = on ? scrubState.path : '';
-  $('scrub-view').hidden = $('scrub-edit').hidden = !on;
+  // Shared by every environment of the site, or one only this environment runs.
+  $('scrub-file').replaceChildren(
+    el('option', { value: 'shared' }, '.lerd/scrub.sql, shared'),
+    el('option', { value: 'own' }, `.lerd/scrub-${current}.sql, only ${current}`),
+  );
+  $('scrub-file').value = scrubState?.own ? 'own' : 'shared';
+  $('scrub-file').hidden = $('scrub-view').hidden = $('scrub-edit').hidden = !on;
 }
 
 async function setScrub(on) {
@@ -675,6 +680,14 @@ function viewScrub() {
 }
 
 $('scrub-on').addEventListener('change', (e) => setScrub(e.target.checked));
+$('scrub-file').addEventListener('change', async (e) => {
+  try {
+    scrubState = await api('run', { action: 'scrub-file', env: current, file: e.target.value });
+  } catch (err) {
+    showLog('scrub', { ok: false, log: err.message });
+  }
+  renderScrub();
+});
 $('scrub-edit').addEventListener('click', () => editScrub());
 $('scrub-view').addEventListener('click', () => viewScrub());
 
