@@ -29,7 +29,7 @@ lerd sync:setup --env staging --ssh forge@203.0.113.11 --path /home/forge/stagin
 | `--env name` | The environment to save, `production` when left out |
 | `--ssh user@host`, `--ssh-port` | The server |
 | `--path` | The project's folder on the server |
-| `--url https://shop.com` | WordPress and Bedrock only: the server's address, swapped for the local one on a pull and back on a push |
+| `--url https://shop.com` | WordPress and Bedrock only: the server's address, swapped for the local one on a pull and back on a push. Needs wp-cli: Lerd 1.39, or `wp-cli/wp-cli-bundle` in the project |
 | `--backup off` | Stop keeping a copy of files a transfer replaces; `on` brings it back |
 | `--keep 10` | How many backups each side keeps, oldest deleted first |
 | `--files a,b` | Folders inside the project to copy down and send up |

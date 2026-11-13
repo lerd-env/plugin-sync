@@ -47,7 +47,7 @@ lerd sync:backups --restore pull:20261111T111800
 | `--path` | The project's folder on the server |
 | `--files a,b` | Folders a plain pull or push copies, such as uploads |
 | `--paths a,b` | Just these files and folders, for one pull or push |
-| `--url https://shop.com` | WordPress and Bedrock: the server's address, rewritten both ways in the database |
+| `--url https://shop.com` | WordPress and Bedrock: the server's address, rewritten both ways in the database, with Lerd 1.39 or wp-cli in the project |
 | `--scrub on` | Scrub personal data after every pull, starting from a default for the framework |
 | `--never a,b` | Names, files or folders never synced, on top of config files, `.lerd/`, `.lerd.yaml` and `.git/` |
 | `--keep 10`, `--backup off` | How many backups each side keeps, or none at all |
