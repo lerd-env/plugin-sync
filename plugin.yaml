@@ -1,7 +1,7 @@
 api_version: 1
 name: sync
 lerd: ">=1.38"
-version: 0.2.0
+version: 0.2.1
 description: Sync a site's files and database with its servers over SSH, both ways, with an environment per server, a side-by-side file browser and backups of everything replaced
 docs: DOCS.md
 icon: icon.svg
