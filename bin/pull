@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // lerd sync:pull [site] [--env production] [--db-only | --files-only | --paths a,b]
 // Replaces the site's lerd database with a fresh dump from its server, after a
-// snapshot, points its URLs at the local site, runs the project's sanitize SQL
-// over it, and syncs the listed folders.
+// snapshot, runs the project's sanitize SQL over it, points its URLs at the
+// local site, and syncs the listed folders.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { parseArgs, mcpInput } = require('../lib/args');
 const { assertRsync, neverRules, backupDir, backupNote, pruneBackups } = require('../lib/files');
-const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
+const { site: findSite, lerd, lerdWithInput, siteDatabase, siteUrl, isWordPress, assertWpCli } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, dumpCommand, passwordInput, ssh, sshArgs, remoteDatabase, mariadbToMysql, rewriteFile } = require('../lib/remote');
 
 async function pullDatabase(site, config) {
@@ -17,6 +17,8 @@ async function pullDatabase(site, config) {
   const database = siteDatabase(site);
   const engine = engineOf(service);
   const db = remoteDatabase(config);
+  const rewrite = config.url && isWordPress(site);
+  if (rewrite) assertWpCli(site);
 
   const tmp = path.join(process.env.LERD_PLUGIN_DATA, 'tmp');
   fs.mkdirSync(tmp, { recursive: true });
@@ -37,12 +39,6 @@ async function pullDatabase(site, config) {
   } finally {
     fs.rmSync(file, { force: true });
   }
-  // A WordPress database names its own address in options and content, so
-  // without this the local copy redirects to the server.
-  if (config.url && isWordPress(site)) {
-    console.log(`replacing ${config.url} with ${siteUrl(site)}`);
-    lerd(['wp', 'search-replace', config.url, siteUrl(site), '--all-tables', '--skip-columns=guid', '--report-changed-only'], site.path);
-  }
   if (config.sanitize) {
     const sql = path.join(site.path, config.sanitize);
     if (!fs.existsSync(sql)) throw new Error(`the sanitize file ${config.sanitize} is missing from ${site.path}`);
@@ -56,6 +52,13 @@ async function pullDatabase(site, config) {
     } catch {
       throw new Error(`${config.sanitize} failed, so the pulled database may still hold unscrubbed data`);
     }
+  }
+  // A WordPress database names its own address in options and content, so
+  // without this the local copy redirects to the server. After the sanitize
+  // step, so a failed rewrite never leaves the data unscrubbed.
+  if (rewrite) {
+    console.log(`replacing ${config.url} with ${siteUrl(site)}`);
+    lerd(['wp', 'search-replace', config.url, siteUrl(site), '--all-tables', '--skip-columns=guid', '--report-changed-only'], site.path);
   }
 }
 

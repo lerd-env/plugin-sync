@@ -8,7 +8,7 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { spawnSync } = require('node:child_process');
 const { parseArgs } = require('../lib/args');
-const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress } = require('../lib/lerd');
+const { site: findSite, lerd, siteDatabase, siteUrl, isWordPress, assertWpCli } = require('../lib/lerd');
 const { loadConfig, pickEnv, engineOf, ssh, sshArgs, sh, mysqlConn, passwordInput, remoteDatabase, pushScript, mysqlToMariadb, rewriteFile } = require('../lib/remote');
 
 const { assertRsync, neverRules, KEEP_DEFAULT, backupDir, backupNote, pruneBackups, pruneCommand } = require('../lib/files');
@@ -115,6 +115,7 @@ async function pushPaths(name, env, opts) {
   const files = opts.files || !opts.db;
   if (opts.db && opts['dry-run']) throw new Error('--dry-run previews files only; leave out --db');
   if (opts.db) await confirmDatabase(env, opts);
+  if (opts.db && env.url && isWordPress(site)) assertWpCli(site);
   if (files) pushFiles(site, env, opts['dry-run']);
   if (opts.db) await pushDatabase(site, env);
   console.log(`${name}: ${opts['dry-run'] ? 'previewed a push to' : 'pushed to'} ${env.name} (${env.ssh})`);
